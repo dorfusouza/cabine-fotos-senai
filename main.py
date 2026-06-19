@@ -39,6 +39,12 @@ if CLOUDINARY_CONFIGURED:
 else:
     print(" * Cloudinary NÃO configurado — usando armazenamento local")
 
+# ── Referência de composição (calibrada para mundosenai.png 1080×1920) ────────
+_REF_W,      _REF_H      = 1080, 1920
+_REF_X,      _REF_Y_BASE =   74,  220
+_REF_FOTO_W, _REF_FOTO_H =  900,  550
+_REF_BORDA               =   10
+
 # ── Fundos por estação ────────────────────────────────────────────────────────
 _station_backgrounds: dict[str, str] = {}
 _sbg_lock = threading.Lock()
@@ -195,8 +201,6 @@ def upload_foto():
     station_id = request.args.get('station', 'default')
     sess       = get_session(sid)
 
-    x, y_base, w, h, borda = 74, 220, 900, 550, 10
-
     data = request.get_json()
     if not data or 'image' not in data:
         return jsonify(success=False, error='No image data'), 400
@@ -210,7 +214,8 @@ def upload_foto():
     if frame is None:
         return jsonify(success=False, error='Invalid image'), 400
 
-    frame    = cv2.resize(frame, (w, h))
+    # Salva cada foto no tamanho de referência; o composite redimensiona para o fundo atual
+    frame    = cv2.resize(frame, (_REF_FOTO_W, _REF_FOTO_H))
     sid_pfx  = sid[:8]
     seq_name = f'{sid_pfx}_foto_{sess["foto_seq"]}.png'
     cv2.imwrite(os.path.join(PHOTOS_DIR, seq_name), frame)
@@ -225,6 +230,16 @@ def upload_foto():
         if moldura is None:
             return jsonify(success=False, error='Fundo não pôde ser carregado'), 500
 
+        # Escala as coordenadas proporcionalmente às dimensões do fundo atual
+        bg_h, bg_w = moldura.shape[:2]
+        sx = bg_w / _REF_W
+        sy = bg_h / _REF_H
+        x      = int(_REF_X      * sx)
+        y_base = int(_REF_Y_BASE * sy)
+        w      = int(_REF_FOTO_W * sx)
+        h      = int(_REF_FOTO_H * sy)
+        borda  = max(4, int(_REF_BORDA * sy))
+
         nome_comp = f'foto_{uuid.uuid4()}.png'
         bg_foto   = np.zeros((h + borda, w + borda, 3), dtype=np.uint8)
 
@@ -233,10 +248,11 @@ def upload_foto():
             foto = cv2.imread(os.path.join(PHOTOS_DIR, f'{sid_pfx}_foto_{seq}.png'))
             if foto is None:
                 continue
+            foto = cv2.resize(foto, (w, h))
             moldura[y - borda//2 : y + h + borda//2,
                     x - borda//2 : x + w + borda//2] = bg_foto
             moldura[y : y + h, x : x + w] = foto
-            y += h + 15
+            y += h + max(10, int(15 * sy))
 
         comp_path = os.path.join(PHOTOS_DIR, nome_comp)
         cv2.imwrite(comp_path, moldura)
