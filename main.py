@@ -403,11 +403,15 @@ def qr():
     sid  = request.args.get('sid', 'default')
     sess = get_session(sid)
 
-    photo_id = sess.get('photo_id')
-    if photo_id:
+    cloud_url = sess.get('cloudinary_url')
+    photo_id  = sess.get('photo_id')
+
+    if cloud_url:
+        qr_data = cloud_url
+    elif photo_id:
         qr_data = f'{APP_URL}foto/{photo_id}'
     elif sess.get('nome_foto'):
-        qr_data = f'{APP_URL}foto/{sess["nome_foto"][:-4]}'
+        qr_data = f'{APP_URL}download/{sess["nome_foto"]}'
     else:
         return Response(status=404)
 
