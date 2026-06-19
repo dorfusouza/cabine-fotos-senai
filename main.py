@@ -56,6 +56,7 @@ def get_station_config(station_id: str) -> dict:
             _station_config[station_id] = {
                 'event_name': 'SENAI — Totem de Fotos',
                 'overlay_qr_url': '',
+                'overlay_qr_label': '',
                 'lgpd_mode': 'personal',   # 'personal' | 'promotional'
             }
         return dict(_station_config[station_id])
@@ -65,6 +66,7 @@ def update_station_config(station_id: str, **kwargs):
         cfg = _station_config.setdefault(station_id, {
             'event_name': 'SENAI — Totem de Fotos',
             'overlay_qr_url': '',
+            'overlay_qr_label': '',
             'lgpd_mode': 'personal',
         })
         cfg.update(kwargs)
@@ -199,8 +201,9 @@ def upload_foto_cloudinary(filepath: str, photo_id: str, event_name: str = '') -
 # ── QR overlay na imagem composta ─────────────────────────────────────────────
 _SENAI_RED_BGR = (19, 6, 227)   # #E30613 em BGR
 
-def aplicar_qr_overlay(moldura: np.ndarray, url: str, bg_w: int, bg_h: int) -> np.ndarray:
-    """QR code emoldurado (borda vermelha SENAI + fundo branco) no canto inferior direito."""
+def aplicar_qr_overlay(moldura: np.ndarray, url: str, label: str,
+                       bg_w: int, bg_h: int) -> np.ndarray:
+    """QR com borda vermelha SENAI, fundo branco e faixa de texto personalizável."""
     try:
         qr_size = max(80, int(bg_w * 0.09))    # tamanho do QR em pixels
         pad     = max(7,  int(qr_size * 0.09)) # espaço branco ao redor do QR
@@ -213,19 +216,40 @@ def aplicar_qr_overlay(moldura: np.ndarray, url: str, bg_w: int, bg_h: int) -> n
         qr_bgr = cv2.cvtColor(qr_arr, cv2.COLOR_RGB2BGR)
         qr_bgr = cv2.resize(qr_bgr, (qr_size, qr_size), interpolation=cv2.INTER_AREA)
 
-        # Painel: borda vermelha ao redor de área branca com o QR
+        # Área branca com QR + borda vermelha
         inner   = qr_size + 2 * pad
-        panel_s = inner + 2 * border
-        panel   = np.full((panel_s, panel_s, 3), _SENAI_RED_BGR, dtype=np.uint8)
+        panel_w = inner + 2 * border
+
+        # Faixa de texto abaixo (só se label preenchido)
+        font    = cv2.FONT_HERSHEY_DUPLEX
+        fscale  = max(0.28, qr_size / 300)
+        fthick  = max(1, int(qr_size / 72))
+        text    = label.upper() if label else ''
+        (tw, th), baseline = cv2.getTextSize(text, font, fscale, fthick) if text else ((0, 0), 0)
+        label_h = (th + baseline + max(10, int(qr_size * 0.12))) if text else 0
+
+        panel_h = inner + 2 * border + label_h
+        panel   = np.full((panel_h, panel_w, 3), _SENAI_RED_BGR, dtype=np.uint8)
+
+        # Área branca central
         panel[border : border + inner, border : border + inner] = (255, 255, 255)
+
+        # QR no centro da área branca
         panel[border + pad : border + pad + qr_size,
               border + pad : border + pad + qr_size] = qr_bgr
 
+        # Texto na faixa vermelha inferior
+        if text:
+            tx = max(border, (panel_w - tw) // 2)
+            ty = border + inner + border + th + max(4, int(qr_size * 0.04))
+            cv2.putText(panel, text, (tx, ty), font, fscale,
+                        (255, 255, 255), fthick, cv2.LINE_AA)
+
         # Cola no canto inferior direito da moldura
-        px = bg_w - panel_s - margin
-        py = bg_h - panel_s - margin
+        px = bg_w - panel_w - margin
+        py = bg_h - panel_h - margin
         if py >= 0 and px >= 0:
-            moldura[py : py + panel_s, px : px + panel_s] = panel
+            moldura[py : py + panel_h, px : px + panel_w] = panel
 
     except Exception as e:
         print(f" * QR overlay error: {e}")
@@ -272,6 +296,7 @@ def config_estacao():
         station_id,
         event_name=request.form.get('event_name', '').strip() or 'SENAI — Totem de Fotos',
         overlay_qr_url=request.form.get('overlay_qr_url', '').strip(),
+        overlay_qr_label=request.form.get('overlay_qr_label', '').strip(),
         lgpd_mode=request.form.get('lgpd_mode', 'personal'),
     )
     return jsonify(success=True)
@@ -371,9 +396,10 @@ def upload_foto():
 
         # QR overlay no canto inferior direito (fora da área das fotos)
         cfg         = get_station_config(station_id)
-        overlay_url = cfg.get('overlay_qr_url', '')
+        overlay_url   = cfg.get('overlay_qr_url', '')
+        overlay_label = cfg.get('overlay_qr_label', '')
         if overlay_url:
-            moldura = aplicar_qr_overlay(moldura, overlay_url, bg_w, bg_h)
+            moldura = aplicar_qr_overlay(moldura, overlay_url, overlay_label, bg_w, bg_h)
 
         comp_path  = os.path.join(PHOTOS_DIR, nome_comp)
         cv2.imwrite(comp_path, moldura)

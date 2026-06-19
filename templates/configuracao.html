@@ -67,6 +67,13 @@
       </div>
 
       <div class="mb-4">
+        <label for="overlay_qr_label">Texto abaixo do QR Code (opcional)</label>
+        <input type="text" id="overlay_qr_label" name="overlay_qr_label"
+               placeholder="Ex: Siga-nos no Instagram!" maxlength="30">
+        <small>Faixa vermelha abaixo do QR com mensagem personalizada. Deixe em branco para exibir só a borda.</small>
+      </div>
+
+      <div class="mb-4">
         <label>Modo de uso das fotos (LGPD)</label>
         <div class="lgpd-options">
           <label class="radio-option">
@@ -253,8 +260,9 @@ document.getElementById('station-chip').textContent = 'Estação ' + STATION_SHO
 fetch('/station_info?station=' + STATION_ID)
   .then(r => r.json())
   .then(cfg => {
-    document.getElementById('event_name').value      = cfg.event_name     || '';
-    document.getElementById('overlay_qr_url').value  = cfg.overlay_qr_url || '';
+    document.getElementById('event_name').value        = cfg.event_name       || '';
+    document.getElementById('overlay_qr_url').value   = cfg.overlay_qr_url  || '';
+    document.getElementById('overlay_qr_label').value = cfg.overlay_qr_label || '';
     const radios = document.querySelectorAll('input[name="lgpd_mode"]');
     radios.forEach(r => { r.checked = (r.value === (cfg.lgpd_mode || 'personal')); });
   }).catch(() => {});
