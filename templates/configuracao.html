@@ -45,6 +45,51 @@
     </form>
   </div>
 
+  <!-- ── Configuração do evento ────────────────────────────── -->
+  <div class="config-card mt-4" style="max-width:560px;">
+    <h2 class="config-section-title">Configuração do evento</h2>
+
+    <form id="event-form">
+      <input type="hidden" id="station-id-event" name="station_id" value="default">
+
+      <div class="mb-4">
+        <label for="event_name">Nome do evento</label>
+        <input type="text" id="event_name" name="event_name"
+               placeholder="Ex: Festa Junina SESI 2026">
+        <small>Exibido como título na tela do totem.</small>
+      </div>
+
+      <div class="mb-4">
+        <label for="overlay_qr_url">URL do QR Code sobreposto na foto</label>
+        <input type="text" id="overlay_qr_url" name="overlay_qr_url"
+               placeholder="https://instagram.com/senailp ou wa.me/5514...">
+        <small>Aparece no canto da foto composta. Deixe em branco para não exibir.</small>
+      </div>
+
+      <div class="mb-4">
+        <label>Modo de uso das fotos (LGPD)</label>
+        <div class="lgpd-options">
+          <label class="radio-option">
+            <input type="radio" name="lgpd_mode" value="personal" checked>
+            <span>
+              <strong>Entrega pessoal</strong>
+              <small>Foto entregue apenas à pessoa. Consentimento por gesto.</small>
+            </span>
+          </label>
+          <label class="radio-option">
+            <input type="radio" name="lgpd_mode" value="promotional">
+            <span>
+              <strong>Uso promocional</strong>
+              <small>Fotos usadas em divulgação. Exige aceite explícito.</small>
+            </span>
+          </label>
+        </div>
+      </div>
+
+      <button type="submit" class="btn-senai" id="btn-event-save">Salvar configurações</button>
+    </form>
+  </div>
+
   <!-- ── Status do serviço ──────────────────────────────────── -->
   <div class="config-card mt-4" style="max-width:560px;">
     <h2 class="config-section-title">Status do serviço</h2>
@@ -169,6 +214,26 @@ small code { background:#1a1a1a; padding:1px 5px; border-radius:4px; color:#ccc;
 .mt-3 { margin-top:12px; }
 .mt-4 { margin-top:20px; }
 .mb-4 { margin-bottom:20px; }
+
+/* Radio LGPD */
+.lgpd-options { display: flex; flex-direction: column; gap: 10px; }
+.radio-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color .2s, background .2s;
+  color: inherit;
+  margin: 0;
+  font-size: 1rem;
+}
+.radio-option:has(input:checked) { border-color: #E30613; background: rgba(227,6,19,0.06); }
+.radio-option input[type="radio"] { margin-top: 3px; accent-color: #E30613; flex-shrink: 0; }
+.radio-option strong { display: block; font-size: .9rem; color: #fff; margin-bottom: 2px; }
+.radio-option small  { margin: 0; display: block; }
 </style>
 
 <script>
@@ -180,8 +245,19 @@ const STATION_ID = localStorage.getItem('totem_station_id');
 const STATION_SHORT = STATION_ID.substring(0, 8);
 
 // Atualiza UI com station_id
-document.getElementById('station-id-field').value = STATION_ID;
+document.getElementById('station-id-field').value  = STATION_ID;
+document.getElementById('station-id-event').value  = STATION_ID;
 document.getElementById('station-chip').textContent = 'Estação ' + STATION_SHORT;
+
+// Carrega configurações do evento desta estação
+fetch('/station_info?station=' + STATION_ID)
+  .then(r => r.json())
+  .then(cfg => {
+    document.getElementById('event_name').value      = cfg.event_name     || '';
+    document.getElementById('overlay_qr_url').value  = cfg.overlay_qr_url || '';
+    const radios = document.querySelectorAll('input[name="lgpd_mode"]');
+    radios.forEach(r => { r.checked = (r.value === (cfg.lgpd_mode || 'personal')); });
+  }).catch(() => {});
 
 // Carrega preview do fundo desta estação
 const previewImg = document.getElementById('fundo-preview');
@@ -263,6 +339,27 @@ document.getElementById('fundo-form').addEventListener('submit', async function(
   } finally {
     btnUpload.disabled    = false;
     btnUpload.textContent = 'Enviar novo fundo';
+  }
+});
+
+// ── Salvar configurações do evento ────────────────────────────────────────────
+document.getElementById('event-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const btn = document.getElementById('btn-event-save');
+  btn.disabled    = true;
+  btn.textContent = 'Salvando...';
+
+  const formData = new FormData(this);
+  try {
+    const res  = await fetch('/config_estacao', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (data.success) showMsg('Configurações do evento salvas!', 'success');
+    else              showMsg('Erro ao salvar.', 'error');
+  } catch {
+    showMsg('Erro de conexão.', 'error');
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = 'Salvar configurações';
   }
 });
 </script>

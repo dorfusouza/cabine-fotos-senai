@@ -4,7 +4,7 @@
 {% block conteudo %}
 <div class="page-content">
 
-  <h1 class="page-title">Leve uma recordação desse momento</h1>
+  <h1 class="page-title" id="event-title">Leve uma recordação desse momento</h1>
   <p class="page-subtitle">Levante a palma da mão para iniciar — 3 fotos serão capturadas automaticamente</p>
 
   <!-- Indicadores de passo -->
@@ -59,7 +59,11 @@
         </div>
       </div>
 
-      <div class="modal-footer">
+      <div class="modal-footer" style="flex-direction:column; gap:8px; align-items:stretch;">
+        <div class="modal-countdown" id="modal-countdown" style="display:none;">
+          <span id="countdown-label">Fechando em <strong id="countdown-num">30</strong>s</span>
+          <div class="countdown-bar-wrap"><div class="countdown-bar" id="countdown-bar"></div></div>
+        </div>
         <button type="button" class="btn-ghost" onclick="fecharModal()">Fechar</button>
       </div>
 
@@ -146,6 +150,17 @@ const camera = new Camera(videoEl, {
   height: 720
 });
 
+// Carrega configuração da estação (nome do evento, etc.)
+fetch('/station_info?station=' + STATION_ID)
+  .then(r => r.json())
+  .then(cfg => {
+    if (cfg.event_name) {
+      document.getElementById('event-title').textContent = cfg.event_name;
+      document.title = cfg.event_name + ' — SENAI';
+    }
+    window._stationCfg = cfg;
+  }).catch(() => {});
+
 camera.start().then(() => {
   setStatus('Levante a palma da mão para iniciar');
 });
@@ -161,6 +176,7 @@ function detectaPalma(lm) {
 // ── Contagem regressiva ──────────────────────────────────
 function iniciarContagem() {
   if (emContagem || emEspera || capturando) return;
+  cancelarIdleReset();
   emContagem     = true;
   countdownStart = Date.now();
   setStatus(`Foto ${fotoSeq + 1} de ${TOTAL} — preparando...`, 'capturing');
@@ -296,6 +312,66 @@ function onResults(results) {
   }
 }
 
+// ── Inatividade ──────────────────────────────────────────
+const MODAL_AUTO_CLOSE_S = 30;
+const IDLE_RESET_S       = 45;
+
+let modalCountdownTimer = null;
+let idleResetTimer      = null;
+
+function iniciarContagemModal() {
+  const wrap = document.getElementById('modal-countdown');
+  const num  = document.getElementById('countdown-num');
+  const bar  = document.getElementById('countdown-bar');
+
+  wrap.style.display = 'block';
+  num.textContent    = MODAL_AUTO_CLOSE_S;
+  bar.style.transition = 'none';
+  bar.style.width      = '100%';
+  void bar.offsetWidth;
+  bar.style.transition = `width ${MODAL_AUTO_CLOSE_S}s linear`;
+  bar.style.width      = '0%';
+
+  let rem = MODAL_AUTO_CLOSE_S;
+  modalCountdownTimer = setInterval(() => {
+    rem--;
+    num.textContent = rem;
+    if (rem <= 0) {
+      clearInterval(modalCountdownTimer);
+      modalCountdownTimer = null;
+      fecharModal();
+    }
+  }, 1000);
+}
+
+function cancelarContagemModal() {
+  if (modalCountdownTimer) { clearInterval(modalCountdownTimer); modalCountdownTimer = null; }
+  const wrap = document.getElementById('modal-countdown');
+  if (wrap) wrap.style.display = 'none';
+}
+
+function iniciarIdleReset() {
+  cancelarIdleReset();
+  idleResetTimer = setTimeout(() => {
+    idleResetTimer = null;
+    resetarEstado();
+  }, IDLE_RESET_S * 1000);
+}
+
+function cancelarIdleReset() {
+  if (idleResetTimer) { clearTimeout(idleResetTimer); idleResetTimer = null; }
+}
+
+function resetarEstado() {
+  fotoSeq        = 0;
+  emContagem     = false;
+  emEspera       = false;
+  capturando     = false;
+  countdownStart = null;
+  atualizarSteps();
+  setStatus('Levante a palma da mão para iniciar');
+}
+
 // ── Modal ────────────────────────────────────────────────
 let modalInstance = null;
 
@@ -308,6 +384,7 @@ function openModal() {
       const el = document.getElementById('photoModal');
       modalInstance = new bootstrap.Modal(el);
       modalInstance.show();
+      iniciarContagemModal();
     }).catch(e => {
       console.error('Erro ao abrir modal:', e);
       setStatus('Erro ao carregar imagem. Tente fechar e repetir.');
@@ -315,12 +392,14 @@ function openModal() {
 }
 
 function fecharModal() {
+  cancelarContagemModal();
   fetch('/esperadetect' + qs()).then(() => {
     if (modalInstance) modalInstance.hide();
     modalInstance = null;
     emEspera = false;
     atualizarSteps();
     setStatus('Levante a palma da mão para iniciar');
+    iniciarIdleReset();
   });
 }
 

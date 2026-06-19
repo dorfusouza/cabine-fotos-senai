@@ -45,6 +45,29 @@ _REF_X,      _REF_Y_BASE =   74,  220
 _REF_FOTO_W, _REF_FOTO_H =  900,  550
 _REF_BORDA               =   10
 
+# ── Config por estação (nome do evento, QR overlay URL, modo LGPD) ───────────
+_station_config: dict[str, dict] = {}
+_cfg_lock = threading.Lock()
+
+def get_station_config(station_id: str) -> dict:
+    with _cfg_lock:
+        if station_id not in _station_config:
+            _station_config[station_id] = {
+                'event_name': 'SENAI — Totem de Fotos',
+                'overlay_qr_url': '',
+                'lgpd_mode': 'personal',   # 'personal' | 'promotional'
+            }
+        return dict(_station_config[station_id])
+
+def update_station_config(station_id: str, **kwargs):
+    with _cfg_lock:
+        cfg = _station_config.setdefault(station_id, {
+            'event_name': 'SENAI — Totem de Fotos',
+            'overlay_qr_url': '',
+            'lgpd_mode': 'personal',
+        })
+        cfg.update(kwargs)
+
 # ── Fundos por estação ────────────────────────────────────────────────────────
 _station_backgrounds: dict[str, str] = {}
 _sbg_lock = threading.Lock()
@@ -161,6 +184,24 @@ def configuracao():
         cloudinary_cloud=os.environ.get('CLOUDINARY_CLOUD_NAME', '—'),
         msg=msg,
     )
+
+
+@app.route('/station_info')
+def station_info():
+    station_id = request.args.get('station', 'default')
+    return jsonify(get_station_config(station_id))
+
+
+@app.route('/config_estacao', methods=['POST'])
+def config_estacao():
+    station_id = request.form.get('station_id', 'default')
+    update_station_config(
+        station_id,
+        event_name=request.form.get('event_name', '').strip() or 'SENAI — Totem de Fotos',
+        overlay_qr_url=request.form.get('overlay_qr_url', '').strip(),
+        lgpd_mode=request.form.get('lgpd_mode', 'personal'),
+    )
+    return jsonify(success=True)
 
 
 @app.route('/upload_fundo', methods=['POST'])
