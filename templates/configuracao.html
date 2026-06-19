@@ -58,21 +58,6 @@
       {% endif %}
     </div>
 
-    <div class="status-bar status-bar--neutral mt-3">
-      <span class="status-dot" style="background:#60a5fa; box-shadow:0 0 6px #60a5fa;"></span>
-      <span>URL base: <strong>{{ app_url }}</strong></span>
-    </div>
-
-    <form method="post" class="mt-4">
-      <div class="mb-4">
-        <label for="site_url">Substituir URL base</label>
-        <input type="text" id="site_url" name="site_url"
-               value="{{ app_url }}"
-               placeholder="https://cabine-fotos-senai.onrender.com/">
-        <small>Definido via variável de ambiente <code>APP_URL</code>. Só altere aqui se necessário.</small>
-      </div>
-      <button type="submit" class="btn-senai">Salvar</button>
-    </form>
   </div>
 
 </div>
