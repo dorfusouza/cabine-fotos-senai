@@ -197,23 +197,36 @@ def upload_foto_cloudinary(filepath: str, photo_id: str, event_name: str = '') -
 
 
 # ── QR overlay na imagem composta ─────────────────────────────────────────────
+_SENAI_RED_BGR = (19, 6, 227)   # #E30613 em BGR
+
 def aplicar_qr_overlay(moldura: np.ndarray, url: str, bg_w: int, bg_h: int) -> np.ndarray:
-    """Gera QR code e cola no canto inferior direito, fora da área das fotos."""
+    """QR code emoldurado (borda vermelha SENAI + fundo branco) no canto inferior direito."""
     try:
-        import qrcode as qrlib
-        from PIL import Image as PILImage
+        qr_size = max(80, int(bg_w * 0.09))    # tamanho do QR em pixels
+        pad     = max(7,  int(qr_size * 0.09)) # espaço branco ao redor do QR
+        border  = max(5,  int(qr_size * 0.06)) # largura da borda vermelha
+        margin  = max(12, int(bg_w * 0.013))   # distância da borda da imagem
 
-        qr_size  = max(70, int(bg_w * 0.085))
-        margin   = max(8,  int(bg_w * 0.010))
+        # Gera o QR (preto no branco)
+        qr_img = qrcode.make(url)
+        qr_arr = np.array(qr_img.convert('RGB'))
+        qr_bgr = cv2.cvtColor(qr_arr, cv2.COLOR_RGB2BGR)
+        qr_bgr = cv2.resize(qr_bgr, (qr_size, qr_size), interpolation=cv2.INTER_AREA)
 
-        qr_img   = qrlib.make(url)
-        qr_arr   = np.array(qr_img.convert('RGB'))
-        qr_bgr   = cv2.cvtColor(qr_arr, cv2.COLOR_RGB2BGR)
-        qr_bgr   = cv2.resize(qr_bgr, (qr_size, qr_size), interpolation=cv2.INTER_AREA)
+        # Painel: borda vermelha ao redor de área branca com o QR
+        inner   = qr_size + 2 * pad
+        panel_s = inner + 2 * border
+        panel   = np.full((panel_s, panel_s, 3), _SENAI_RED_BGR, dtype=np.uint8)
+        panel[border : border + inner, border : border + inner] = (255, 255, 255)
+        panel[border + pad : border + pad + qr_size,
+              border + pad : border + pad + qr_size] = qr_bgr
 
-        x = bg_w - qr_size - margin
-        y = bg_h - qr_size - margin
-        moldura[y:y+qr_size, x:x+qr_size] = qr_bgr
+        # Cola no canto inferior direito da moldura
+        px = bg_w - panel_s - margin
+        py = bg_h - panel_s - margin
+        if py >= 0 and px >= 0:
+            moldura[py : py + panel_s, px : px + panel_s] = panel
+
     except Exception as e:
         print(f" * QR overlay error: {e}")
     return moldura
