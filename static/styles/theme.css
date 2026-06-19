@@ -154,10 +154,31 @@ body {
 /* ── Camera ──────────────────────────────────── */
 .camera-wrapper {
   display: inline-block;
+  position: relative;
   border: 2px solid var(--red);
   border-radius: 10px;
   overflow: hidden;
   box-shadow: 0 0 40px rgba(227,6,19,0.18), 0 4px 32px rgba(0,0,0,0.7);
+}
+
+/* Flash de captura */
+#flash-overlay {
+  position: absolute;
+  inset: 0;
+  background: white;
+  pointer-events: none;
+  opacity: 0;
+  border-radius: 8px;
+}
+
+@keyframes camera-flash {
+  0%   { opacity: 0; }
+  8%   { opacity: 0.92; }
+  100% { opacity: 0; }
+}
+
+#flash-overlay.flashing {
+  animation: camera-flash 0.55s ease-out forwards;
 }
 
 #output_canvas {

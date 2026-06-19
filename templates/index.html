@@ -22,6 +22,7 @@
   <!-- Canvas principal: feed espelhado + landmarks + countdown -->
   <div class="camera-wrapper">
     <canvas id="output_canvas"></canvas>
+    <div id="flash-overlay"></div>
   </div>
 
   <!-- Status -->
@@ -168,11 +169,20 @@ function iniciarContagem() {
 
 function dispararManual() { iniciarContagem(); }
 
+// ── Flash de captura ─────────────────────────────────────
+function triggerFlash() {
+  const el = document.getElementById('flash-overlay');
+  el.classList.remove('flashing');
+  void el.offsetWidth; // força reflow para reiniciar a animação
+  el.classList.add('flashing');
+}
+
 // ── Captura e envio do frame ─────────────────────────────
 async function capturarFoto() {
   if (capturando) return;
   capturando = true;
   emContagem = false;
+  triggerFlash();
 
   setStatus(`Capturando foto ${fotoSeq + 1} de ${TOTAL}...`, 'capturing');
 
