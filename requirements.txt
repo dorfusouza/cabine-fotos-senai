@@ -1,0 +1,8 @@
+Flask
+numpy
+opencv-python-headless
+qrcode[pil]
+Pillow
+Werkzeug
+gunicorn
+cloudinary

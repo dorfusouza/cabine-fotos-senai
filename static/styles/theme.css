@@ -1,0 +1,269 @@
+:root {
+  --red:      #E30613;
+  --red-dark: #b3000f;
+  --bg:       #0d0d0d;
+  --bg-card:  #1a1a1a;
+  --border:   #2a2a2a;
+  --text:     #ffffff;
+  --muted:    rgba(255,255,255,0.5);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  margin: 0;
+}
+
+/* ── Navbar ──────────────────────────────────── */
+.senai-nav {
+  background: var(--red);
+  height: 62px;
+  padding: 0 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 2px 16px rgba(0,0,0,0.5);
+  flex-shrink: 0;
+}
+
+.senai-nav .logo-area {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.senai-nav .logo-img {
+  height: 36px;
+  border-radius: 3px;
+}
+
+.senai-nav .logo-label {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+
+.senai-nav .logo-label .brand {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: white;
+  letter-spacing: 2px;
+}
+
+.senai-nav .logo-label .sub {
+  font-size: 0.65rem;
+  color: rgba(255,255,255,0.75);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+}
+
+.senai-nav nav a {
+  color: rgba(255,255,255,0.8);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.88rem;
+  letter-spacing: 0.5px;
+  padding: 6px 0;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+  margin-left: 28px;
+}
+
+.senai-nav nav a:hover,
+.senai-nav nav a.active {
+  color: white;
+  border-bottom-color: rgba(255,255,255,0.7);
+}
+
+/* ── Page content ────────────────────────────── */
+.page-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 20px 12px;
+  text-align: center;
+}
+
+.page-title {
+  font-size: 1.7rem;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.page-subtitle {
+  color: var(--muted);
+  font-size: 0.95rem;
+  margin-bottom: 18px;
+}
+
+/* ── Step indicators ─────────────────────────── */
+.steps {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 18px;
+  gap: 0;
+}
+
+.step-dot {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 2px solid #333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #555;
+  background: var(--bg-card);
+  transition: all 0.35s ease;
+  position: relative;
+  z-index: 1;
+}
+
+.step-dot.active {
+  border-color: var(--red);
+  background: var(--red);
+  color: white;
+  box-shadow: 0 0 18px rgba(227,6,19,0.55);
+}
+
+.step-dot.done {
+  border-color: #22c55e;
+  background: #22c55e;
+  color: white;
+}
+
+.step-line {
+  width: 56px;
+  height: 2px;
+  background: #333;
+  transition: background 0.35s;
+}
+
+.step-line.done { background: #22c55e; }
+
+/* ── Camera ──────────────────────────────────── */
+.camera-wrapper {
+  display: inline-block;
+  border: 2px solid var(--red);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 0 40px rgba(227,6,19,0.18), 0 4px 32px rgba(0,0,0,0.7);
+}
+
+#output_canvas {
+  display: block;
+  max-width: 100%;
+  max-height: 62vh;
+}
+
+/* ── Status ──────────────────────────────────── */
+.status-bar {
+  margin: 14px 0 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--muted);
+  min-height: 26px;
+  transition: color 0.3s;
+}
+
+.status-bar.capturing { color: var(--red); }
+.status-bar.ready     { color: #22c55e;   }
+
+/* ── Buttons ─────────────────────────────────── */
+.btn-senai {
+  background: var(--red);
+  color: white;
+  border: none;
+  font-weight: 700;
+  font-size: 0.95rem;
+  padding: 10px 30px;
+  border-radius: 6px;
+  cursor: pointer;
+  letter-spacing: 0.4px;
+  transition: background 0.2s, transform 0.1s, box-shadow 0.2s;
+}
+
+.btn-senai:hover {
+  background: var(--red-dark);
+  color: white;
+  box-shadow: 0 4px 14px rgba(227,6,19,0.4);
+}
+
+.btn-senai:active { transform: scale(0.97); }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  font-weight: 500;
+  font-size: 0.9rem;
+  padding: 8px 22px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-ghost:hover {
+  background: var(--bg-card);
+  color: white;
+  border-color: #444;
+}
+
+/* ── Footer ──────────────────────────────────── */
+footer {
+  text-align: center;
+  padding: 10px;
+  color: #333;
+  font-size: 0.75rem;
+  border-top: 1px solid #1a1a1a;
+  flex-shrink: 0;
+}
+
+/* ── Config form ─────────────────────────────── */
+.config-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 32px;
+  max-width: 500px;
+  width: 100%;
+  text-align: left;
+}
+
+.config-card label {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+  display: block;
+}
+
+.config-card input[type="text"] {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: white;
+  padding: 10px 14px;
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.config-card input[type="text"]:focus {
+  border-color: var(--red);
+}
+
+.config-card input::placeholder { color: #444; }

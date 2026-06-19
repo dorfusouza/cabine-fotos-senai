@@ -1,0 +1,76 @@
+#photoModal {
+  background: rgba(0, 0, 0, 0.82);
+}
+
+#photoModal .modal-dialog {
+  max-width: 740px;
+  width: 95vw;
+  margin: 20px auto;
+}
+
+#photoModal .modal-content {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+}
+
+#photoModal .modal-header {
+  background: #E30613;
+  border-bottom: none;
+  padding: 20px 26px;
+}
+
+#photoModal .modal-header h4 {
+  color: white;
+  font-weight: 700;
+  margin: 0 0 4px;
+  font-size: 1.2rem;
+}
+
+#photoModal .modal-header p {
+  color: rgba(255,255,255,0.8);
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+#photoModal .modal-body {
+  padding: 24px 26px;
+}
+
+#photoModal .qr-section {
+  border-right: 1px solid #2a2a2a;
+  padding-right: 24px;
+}
+
+#photoModal .qr-label {
+  color: rgba(255,255,255,0.5);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+}
+
+#photoModal .photo-section {
+  padding-left: 24px;
+}
+
+#photoModal .modal-footer {
+  border-top: 1px solid #2a2a2a;
+  padding: 14px 26px;
+  justify-content: flex-end;
+  background: #111;
+}
+
+@media (max-width: 576px) {
+  #photoModal .qr-section {
+    border-right: none;
+    border-bottom: 1px solid #2a2a2a;
+    padding-right: 0;
+    padding-bottom: 20px;
+    margin-bottom: 20px;
+  }
+  #photoModal .photo-section { padding-left: 0; }
+}

@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: cabinefotos-v2
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 8 main:app
+    envVars:
+      - key: APP_URL
+        value: https://cabinefotos-v2.onrender.com/
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false

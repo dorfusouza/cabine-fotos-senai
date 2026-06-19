@@ -1,0 +1,117 @@
+{% extends 'base.html' %}
+{% block nav_config %}active{% endblock %}
+
+{% block conteudo %}
+<div class="page-content">
+  <h1 class="page-title">Configurações</h1>
+  <p class="page-subtitle">Status do serviço e URL base para os QR Codes</p>
+
+  {% if msg %}
+  <div class="config-msg config-msg--{{ msg[0] }}">{{ msg[1] }}</div>
+  {% endif %}
+
+  <div class="config-card" style="max-width:560px;">
+
+    <!-- Status Cloudinary -->
+    <div class="status-bar {% if cloudinary_ok %}status-bar--on{% else %}status-bar--off{% endif %}">
+      <span class="status-dot"></span>
+      {% if cloudinary_ok %}
+        <span>Cloudinary ativo &nbsp;<strong>{{ cloudinary_cloud }}</strong></span>
+      {% else %}
+        <span>Cloudinary não configurado — fotos salvas localmente</span>
+      {% endif %}
+    </div>
+
+    <!-- URL atual -->
+    <div class="status-bar status-bar--neutral mt-3">
+      <span class="status-dot" style="background:#60a5fa; box-shadow:0 0 6px #60a5fa;"></span>
+      <span>URL base: <strong>{{ app_url }}</strong></span>
+    </div>
+
+    <form method="post" class="mt-4">
+      <div class="mb-4">
+        <label for="site_url">Substituir URL base</label>
+        <input type="text" id="site_url" name="site_url"
+               value="{{ app_url }}"
+               placeholder="https://cabinefotos-v2.onrender.com/">
+        <small>Usado nos QR Codes quando Cloudinary não está ativo. Normalmente definido via variável de ambiente <code>APP_URL</code>.</small>
+      </div>
+      <button type="submit" class="btn-senai">Salvar</button>
+    </form>
+
+  </div>
+
+  <!-- Instruções Cloudinary -->
+  {% if not cloudinary_ok %}
+  <div class="config-card mt-4" style="max-width:560px;">
+    <h2 style="font-size:1rem; font-weight:700; color:#E30613; margin-bottom:12px;">Como configurar o Cloudinary</h2>
+    <ol style="color:#aaa; font-size:0.88rem; padding-left:20px; line-height:1.9;">
+      <li>Crie uma conta gratuita em <strong style="color:#fff;">cloudinary.com</strong></li>
+      <li>No painel, copie <strong>Cloud name</strong>, <strong>API Key</strong> e <strong>API Secret</strong></li>
+      <li>No Render, vá em <em>Environment → Add Environment Variable</em> e adicione:<br>
+        <code>CLOUDINARY_CLOUD_NAME</code> &nbsp;·&nbsp;
+        <code>CLOUDINARY_API_KEY</code> &nbsp;·&nbsp;
+        <code>CLOUDINARY_API_SECRET</code>
+      </li>
+      <li>Faça redeploy — o servidor reinicia com Cloudinary ativo</li>
+    </ol>
+  </div>
+  {% endif %}
+
+</div>
+
+<style>
+.config-msg {
+  max-width: 560px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+.config-msg--success { background: rgba(34,197,94,0.12); border: 1px solid #22c55e; color: #22c55e; }
+.config-msg--error   { background: rgba(227,6,19,0.12);  border: 1px solid #E30613; color: #ff6b6b; }
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  border: 1px solid #2a2a2a;
+  word-break: break-all;
+}
+.status-bar--on      { background: rgba(34,197,94,0.08); border-color: rgba(34,197,94,0.2); color: rgba(255,255,255,0.85); }
+.status-bar--off     { background: rgba(255,255,255,0.03); color: #555; }
+.status-bar--neutral { background: rgba(96,165,250,0.06); border-color: rgba(96,165,250,0.2); color: rgba(255,255,255,0.75); }
+
+.status-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.status-bar--on  .status-dot { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+.status-bar--off .status-dot { background: #444; }
+
+label {
+  display: block;
+  font-size: 0.85rem;
+  color: #aaa;
+  margin-bottom: 6px;
+}
+input[type="text"] {
+  width: 100%;
+  background: #111;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  padding: 10px 14px;
+  color: #fff;
+  font-size: 0.9rem;
+}
+input[type="text"]:focus { outline: none; border-color: #E30613; }
+small { color: #555; font-size: 0.78rem; margin-top: 6px; display: block; }
+small code { background: #1a1a1a; padding: 1px 5px; border-radius: 4px; color: #ccc; }
+ol li + li { margin-top: 2px; }
+</style>
+{% endblock %}

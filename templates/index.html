@@ -1,0 +1,319 @@
+{% extends 'base.html' %}
+{% block nav_inicio %}active{% endblock %}
+
+{% block conteudo %}
+<div class="page-content">
+
+  <h1 class="page-title">Leve uma recordação desse momento</h1>
+  <p class="page-subtitle">Levante a palma da mão para iniciar — 3 fotos serão capturadas automaticamente</p>
+
+  <!-- Indicadores de passo -->
+  <div class="steps">
+    <div class="step-dot" id="step-1">1</div>
+    <div class="step-line" id="line-1"></div>
+    <div class="step-dot" id="step-2">2</div>
+    <div class="step-line" id="line-2"></div>
+    <div class="step-dot" id="step-3">3</div>
+  </div>
+
+  <!-- Vídeo oculto — fonte para o MediaPipe -->
+  <video id="input_video" style="display:none;" autoplay playsinline></video>
+
+  <!-- Canvas principal: feed espelhado + landmarks + countdown -->
+  <div class="camera-wrapper">
+    <canvas id="output_canvas"></canvas>
+  </div>
+
+  <!-- Status -->
+  <p class="status-bar" id="status_text">Carregando câmera...</p>
+
+  <!-- Disparo manual -->
+  <button class="btn-senai" onclick="dispararManual()">Tirar Foto</button>
+
+</div>
+
+<!-- ── Modal: resultado ──────────────────────────────────── -->
+<div class="modal fade" id="photoModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+
+      <div class="modal-header">
+        <div>
+          <h4>Sua foto está pronta!</h4>
+          <p>Escaneie o QR Code para baixar. Clique em Fechar para nova captura.</p>
+        </div>
+      </div>
+
+      <div class="modal-body">
+        <div class="row g-0 align-items-center">
+          <div class="col-md-4 qr-section text-center">
+            <p class="qr-label">QR Code para download</p>
+            <img id="qr_image" src="" alt="QR Code"
+                 style="max-width:180px; width:100%; border-radius:8px;">
+          </div>
+          <div class="col-md-8 photo-section text-center">
+            <img id="saved_image" src="" alt="Foto capturada"
+                 style="max-width:100%; max-height:380px; border-radius:8px; object-fit:contain;">
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn-ghost" onclick="fecharModal()">Fechar</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- MediaPipe Hands via CDN (requer internet) -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.js" crossorigin="anonymous"></script>
+
+<script>
+const videoEl  = document.getElementById('input_video');
+const canvasEl = document.getElementById('output_canvas');
+const ctx      = canvasEl.getContext('2d');
+const statusEl = document.getElementById('status_text');
+
+const TOTAL   = 3;
+const TIMER   = 5;
+
+// ID único por aba/browser — isola o estado desta sessão no servidor
+if (!sessionStorage.getItem('totem_sid')) {
+  sessionStorage.setItem('totem_sid', crypto.randomUUID());
+}
+const SID = sessionStorage.getItem('totem_sid');
+const qs  = () => `?sid=${SID}`;
+
+let fotoSeq      = 0;
+let emContagem   = false;
+let emEspera     = false;
+let capturando   = false;
+let countdownStart = null;
+
+// ── Indicadores de passo ─────────────────────────────────
+function atualizarSteps() {
+  for (let i = 1; i <= TOTAL; i++) {
+    const dot  = document.getElementById(`step-${i}`);
+    const line = document.getElementById(`line-${i}`);
+    dot.className = 'step-dot';
+
+    if (i <= fotoSeq) {
+      dot.classList.add('done');
+      if (line) line.className = 'step-line done';
+    } else if (i === fotoSeq + 1 && (emContagem || capturando)) {
+      dot.classList.add('active');
+      if (line) line.className = 'step-line';
+    } else {
+      if (line) line.className = 'step-line';
+    }
+  }
+}
+
+function setStatus(msg, cls = '') {
+  statusEl.textContent  = msg;
+  statusEl.className    = 'status-bar' + (cls ? ' ' + cls : '');
+}
+
+// ── MediaPipe Hands ──────────────────────────────────────
+const hands = new Hands({
+  locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/${f}`
+});
+
+hands.setOptions({
+  maxNumHands: 1,
+  modelComplexity: 1,
+  minDetectionConfidence: 0.7,
+  minTrackingConfidence: 0.7
+});
+
+hands.onResults(onResults);
+
+const camera = new Camera(videoEl, {
+  onFrame: async () => { await hands.send({ image: videoEl }); },
+  width: 1280,
+  height: 720
+});
+
+camera.start().then(() => {
+  setStatus('Levante a palma da mão para iniciar');
+});
+
+// ── Detecção de palma (mesma lógica do v1 Python) ────────
+function detectaPalma(lm) {
+  return lm[4].y > lm[8].y  &&
+         lm[8].y > lm[12].y &&
+         lm[4].y > lm[16].y &&
+         lm[4].y > lm[20].y;
+}
+
+// ── Contagem regressiva ──────────────────────────────────
+function iniciarContagem() {
+  if (emContagem || emEspera || capturando) return;
+  emContagem     = true;
+  countdownStart = Date.now();
+  setStatus(`Foto ${fotoSeq + 1} de ${TOTAL} — preparando...`, 'capturing');
+  atualizarSteps();
+}
+
+function dispararManual() { iniciarContagem(); }
+
+// ── Captura e envio do frame ─────────────────────────────
+async function capturarFoto() {
+  if (capturando) return;
+  capturando = true;
+  emContagem = false;
+
+  setStatus(`Capturando foto ${fotoSeq + 1} de ${TOTAL}...`, 'capturing');
+
+  // Captura o frame cru do vídeo (sem espelhamento — foto natural)
+  const tmp = document.createElement('canvas');
+  tmp.width  = videoEl.videoWidth  || 1280;
+  tmp.height = videoEl.videoHeight || 720;
+  tmp.getContext('2d').drawImage(videoEl, 0, 0);
+
+  try {
+    const res = await fetch('/upload_foto' + qs(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: tmp.toDataURL('image/png') })
+    });
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    fotoSeq++;
+    atualizarSteps();
+
+    if (fotoSeq < TOTAL) {
+      setStatus(`Foto ${fotoSeq} capturada! Preparando próxima...`);
+      capturando = false;
+      setTimeout(iniciarContagem, 1000);
+    } else {
+      setStatus('Todas as fotos capturadas! Gerando QR Code...', 'ready');
+      fotoSeq  = 0;
+      emEspera = true;
+      capturando = false;
+    }
+  } catch (e) {
+    console.error('Erro ao enviar foto:', e);
+    setStatus('Erro na captura. Tente novamente.');
+    capturando = false;
+    emContagem = false;
+    atualizarSteps();
+  }
+}
+
+// ── Loop de renderização (MediaPipe frame callback) ──────
+function onResults(results) {
+  // Ajusta canvas ao tamanho real do vídeo no primeiro frame
+  if (canvasEl.width  !== results.image.width)  canvasEl.width  = results.image.width;
+  if (canvasEl.height !== results.image.height) canvasEl.height = results.image.height;
+
+  ctx.save();
+  ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+
+  // Frame espelhado (efeito espelho para o usuário)
+  ctx.translate(canvasEl.width, 0);
+  ctx.scale(-1, 1);
+  ctx.drawImage(results.image, 0, 0, canvasEl.width, canvasEl.height);
+
+  // Landmarks das mãos
+  if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+    const lm = results.multiHandLandmarks[0];
+    drawConnectors(ctx, lm, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 3 });
+    drawLandmarks(ctx,  lm,                   { color: '#FF0000', lineWidth: 2, radius: 4 });
+
+    if (!emContagem && !emEspera && !capturando && detectaPalma(lm)) {
+      iniciarContagem();
+    }
+  }
+
+  ctx.restore(); // remove espelhamento para os overlays de texto
+
+  // Overlay: countdown
+  if (emContagem) {
+    const elapsed   = (Date.now() - countdownStart) / 1000;
+    const remaining = TIMER - elapsed;
+
+    if (remaining > 0) {
+      const num = Math.ceil(remaining).toString();
+      ctx.save();
+      ctx.font         = 'bold 200px "Segoe UI", Arial';
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      // Sombra para legibilidade
+      ctx.shadowColor  = 'rgba(0,0,0,0.6)';
+      ctx.shadowBlur   = 20;
+      ctx.lineWidth    = 12;
+      ctx.strokeStyle  = 'rgba(0,0,0,0.5)';
+      ctx.strokeText(num, canvasEl.width / 2, canvasEl.height / 2);
+      ctx.shadowBlur   = 0;
+      ctx.fillStyle    = '#E30613';
+      ctx.fillText(num, canvasEl.width / 2, canvasEl.height / 2);
+      ctx.restore();
+    } else if (!capturando) {
+      capturarFoto();
+    }
+  }
+
+  // Overlay: barra de progresso de fotos (canto superior esquerdo)
+  if (emContagem || fotoSeq > 0 || emEspera) {
+    const atual  = emEspera ? TOTAL : fotoSeq + (emContagem ? 1 : 0);
+    const label  = `Foto ${atual} / ${TOTAL}`;
+    ctx.save();
+    // Pill de fundo
+    ctx.fillStyle    = 'rgba(227,6,19,0.85)';
+    ctx.beginPath();
+    ctx.roundRect(12, 12, 150, 42, 8);
+    ctx.fill();
+    // Texto
+    ctx.font         = 'bold 22px "Segoe UI", Arial';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle    = 'white';
+    ctx.fillText(label, 87, 33);
+    ctx.restore();
+  }
+}
+
+// ── Modal ────────────────────────────────────────────────
+let modalInstance = null;
+
+function openModal() {
+  fetch('/captured_image' + qs())
+    .then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); })
+    .then(blob => {
+      document.getElementById('saved_image').src = URL.createObjectURL(blob);
+      document.getElementById('qr_image').src    = '/qr' + qs() + '&t=' + Date.now();
+      const el = document.getElementById('photoModal');
+      modalInstance = new bootstrap.Modal(el);
+      modalInstance.show();
+    }).catch(e => {
+      console.error('Erro ao abrir modal:', e);
+      setStatus('Erro ao carregar imagem. Tente fechar e repetir.');
+    });
+}
+
+function fecharModal() {
+  fetch('/esperadetect' + qs()).then(() => {
+    if (modalInstance) modalInstance.hide();
+    modalInstance = null;
+    emEspera = false;
+    atualizarSteps();
+    setStatus('Levante a palma da mão para iniciar');
+  });
+}
+
+// ── Polling: verifica composição pronta ──────────────────
+setInterval(() => {
+  fetch('/captured' + qs())
+    .then(r => r.json())
+    .then(d => { if (d.foto_capturada) openModal(); })
+    .catch(() => {});
+}, 3000);
+</script>
+{% endblock %}

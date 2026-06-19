@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Totem de Fotos - SENAI-LP</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="{{ url_for('static', filename='styles/theme.css') }}" rel="stylesheet">
+  <link href="{{ url_for('static', filename='styles/modals.css') }}" rel="stylesheet">
+</head>
+<body>
+
+  <!-- Navbar SENAI -->
+  <header class="senai-nav">
+    <div class="logo-area">
+      <img src="{{ url_for('static', filename='images/SENAI-SP.jpg') }}"
+           alt="SENAI" class="logo-img">
+      <div class="logo-label">
+        <span class="brand">SENAI</span>
+        <span class="sub">Totem de Fotos</span>
+      </div>
+    </div>
+    <nav>
+      <a href="/index" class="{% block nav_inicio %}{% endblock %}">Início</a>
+      <a href="/configuracao" class="{% block nav_config %}{% endblock %}">Configurações</a>
+    </nav>
+  </header>
+
+  {% block conteudo %}{% endblock %}
+
+  <footer>
+    SENAI-LP &nbsp;·&nbsp; Totem de Fotos &nbsp;·&nbsp; Projeto Senailp.bot
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
