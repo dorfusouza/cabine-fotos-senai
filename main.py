@@ -3,6 +3,7 @@ import uuid
 import base64
 import shutil
 import threading
+import urllib.parse
 import urllib.request
 
 import cv2
@@ -138,6 +139,7 @@ def get_session(sid: str) -> dict:
             _sessions[sid] = {
                 'foto_seq':       0,
                 'nome_foto':      '',
+                'photo_id':       None,
                 'cloudinary_url': None,
                 'foto_capturada': False,
                 'espera':         False,
@@ -145,18 +147,76 @@ def get_session(sid: str) -> dict:
         return _sessions[sid]
 
 
+# ── Registro de fotos (photo_id → metadados) ──────────────────────────────────
+_photo_registry: dict[str, dict] = {}
+_reg_lock = threading.Lock()
+
+def registrar_foto(photo_id: str, cloudinary_url: str | None, station_id: str, event_name: str):
+    with _reg_lock:
+        _photo_registry[photo_id] = {
+            'cloudinary_url': cloudinary_url,
+            'station_id':     station_id,
+            'event_name':     event_name,
+        }
+
+def get_foto_info(photo_id: str) -> dict | None:
+    with _reg_lock:
+        return _photo_registry.get(photo_id)
+
+def get_foto_cloudinary_url(photo_id: str) -> str | None:
+    """Constrói URL Cloudinary a partir do photo_id quando o registro em memória expirou."""
+    if not CLOUDINARY_CONFIGURED:
+        return None
+    info = get_foto_info(photo_id)
+    if info and info.get('cloudinary_url'):
+        return info['cloudinary_url']
+    # Tenta buscar direto no Cloudinary com public_id previsível
+    try:
+        resource = cloudinary.api.resource(f'cabinefotos/fotos/{photo_id}')
+        return resource['secure_url']
+    except Exception:
+        return None
+
+
 # ── Cloudinary upload de fotos ────────────────────────────────────────────────
-def upload_foto_cloudinary(filepath: str) -> str | None:
+def upload_foto_cloudinary(filepath: str, photo_id: str, event_name: str = '') -> str | None:
     if not CLOUDINARY_CONFIGURED:
         return None
     try:
         result = cloudinary.uploader.upload(
-            filepath, folder='cabinefotos', resource_type='image'
+            filepath,
+            public_id=f'cabinefotos/fotos/{photo_id}',
+            overwrite=False,
+            resource_type='image',
+            context=f'event_name={event_name}',
         )
         return result['secure_url']
     except Exception as e:
         print(f" * Cloudinary foto upload error: {e}")
         return None
+
+
+# ── QR overlay na imagem composta ─────────────────────────────────────────────
+def aplicar_qr_overlay(moldura: np.ndarray, url: str, bg_w: int, bg_h: int) -> np.ndarray:
+    """Gera QR code e cola no canto inferior direito, fora da área das fotos."""
+    try:
+        import qrcode as qrlib
+        from PIL import Image as PILImage
+
+        qr_size  = max(70, int(bg_w * 0.085))
+        margin   = max(8,  int(bg_w * 0.010))
+
+        qr_img   = qrlib.make(url)
+        qr_arr   = np.array(qr_img.convert('RGB'))
+        qr_bgr   = cv2.cvtColor(qr_arr, cv2.COLOR_RGB2BGR)
+        qr_bgr   = cv2.resize(qr_bgr, (qr_size, qr_size), interpolation=cv2.INTER_AREA)
+
+        x = bg_w - qr_size - margin
+        y = bg_h - qr_size - margin
+        moldura[y:y+qr_size, x:x+qr_size] = qr_bgr
+    except Exception as e:
+        print(f" * QR overlay error: {e}")
+    return moldura
 
 
 # ── Rotas ─────────────────────────────────────────────────────────────────────
@@ -281,7 +341,8 @@ def upload_foto():
         h      = int(_REF_FOTO_H * sy)
         borda  = max(4, int(_REF_BORDA * sy))
 
-        nome_comp = f'foto_{uuid.uuid4()}.png'
+        nome_comp = f'foto_{station_id[:8]}_{uuid.uuid4()}.png'
+        photo_id  = nome_comp[:-4]
         bg_foto   = np.zeros((h + borda, w + borda, 3), dtype=np.uint8)
 
         y = y_base
@@ -295,12 +356,21 @@ def upload_foto():
             moldura[y : y + h, x : x + w] = foto
             y += h + max(10, int(15 * sy))
 
-        comp_path = os.path.join(PHOTOS_DIR, nome_comp)
+        # QR overlay no canto inferior direito (fora da área das fotos)
+        cfg         = get_station_config(station_id)
+        overlay_url = cfg.get('overlay_qr_url', '')
+        if overlay_url:
+            moldura = aplicar_qr_overlay(moldura, overlay_url, bg_w, bg_h)
+
+        comp_path  = os.path.join(PHOTOS_DIR, nome_comp)
         cv2.imwrite(comp_path, moldura)
 
-        cloud_url = upload_foto_cloudinary(comp_path)
+        event_name = cfg.get('event_name', 'SENAI — Totem de Fotos')
+        cloud_url  = upload_foto_cloudinary(comp_path, photo_id, event_name)
+        registrar_foto(photo_id, cloud_url, station_id, event_name)
 
         sess['nome_foto']      = nome_comp
+        sess['photo_id']       = photo_id
         sess['cloudinary_url'] = cloud_url
         sess['foto_capturada'] = True
         sess['foto_seq']       = 0
@@ -333,11 +403,11 @@ def qr():
     sid  = request.args.get('sid', 'default')
     sess = get_session(sid)
 
-    cloud_url = sess.get('cloudinary_url')
-    if cloud_url:
-        qr_data = cloud_url
+    photo_id = sess.get('photo_id')
+    if photo_id:
+        qr_data = f'{APP_URL}foto/{photo_id}'
     elif sess.get('nome_foto'):
-        qr_data = f'{APP_URL}download/{sess["nome_foto"]}'
+        qr_data = f'{APP_URL}foto/{sess["nome_foto"][:-4]}'
     else:
         return Response(status=404)
 
@@ -346,6 +416,33 @@ def qr():
     img.save(img_bytes, format='PNG')
     img_bytes.seek(0)
     return Response(img_bytes.read(), mimetype='image/png')
+
+
+@app.route('/foto/<photo_id>')
+def download_page(photo_id):
+    info       = get_foto_info(photo_id)
+    cloud_url  = get_foto_cloudinary_url(photo_id)
+    event_name = (info or {}).get('event_name', 'SENAI — Totem de Fotos')
+
+    if not cloud_url:
+        local_path = os.path.join(PHOTOS_DIR, photo_id + '.png')
+        if not os.path.exists(local_path):
+            return render_template('download.html',
+                error=True, photo_id=photo_id, event_name=event_name,
+                cloud_url=None, whatsapp_url=None)
+
+    whatsapp_url = None
+    if cloud_url:
+        msg = urllib.parse.quote(f'Confira minha foto! {cloud_url}')
+        whatsapp_url = f'https://api.whatsapp.com/send?text={msg}'
+
+    return render_template('download.html',
+        photo_id=photo_id,
+        cloud_url=cloud_url,
+        event_name=event_name,
+        whatsapp_url=whatsapp_url,
+        error=False,
+    )
 
 
 @app.route('/download/<filename>')
