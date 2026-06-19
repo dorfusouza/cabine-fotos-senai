@@ -4,7 +4,7 @@
 {% block conteudo %}
 <div class="page-content">
   <h1 class="page-title">Configurações</h1>
-  <p class="page-subtitle">Status do serviço, imagem de fundo e URL base para os QR Codes</p>
+  <p class="page-subtitle">Cada estação tem seu próprio fundo — configurações são independentes</p>
 
   <div id="page-msg" class="config-msg" style="display:none; max-width:560px;"></div>
 
@@ -12,23 +12,27 @@
   <div class="config-msg config-msg--{{ msg[0] }}" style="max-width:560px;">{{ msg[1] }}</div>
   {% endif %}
 
-  <!-- ── Fundo atual ─────────────────────────────────────────── -->
+  <!-- ── Fundo da estação ───────────────────────────────────── -->
   <div class="config-card" style="max-width:560px;">
-    <h2 class="config-section-title">Imagem de fundo</h2>
+    <div class="section-header">
+      <h2 class="config-section-title">Imagem de fundo desta estação</h2>
+      <span class="station-chip" id="station-chip">Estação —</span>
+    </div>
 
     <div class="fundo-preview-wrap">
-      <img id="fundo-preview" src="/fundo_preview?t={{ range(99999) | random }}"
+      <img id="fundo-preview" src="/fundo_preview?station=default"
            alt="Fundo atual" class="fundo-preview-img">
-      <span class="fundo-badge {% if fundo_customizado %}fundo-badge--custom{% else %}fundo-badge--default{% endif %}">
-        {% if fundo_customizado %}Personalizado{% else %}Padrão{% endif %}
-      </span>
+      <span class="fundo-badge" id="fundo-badge">Carregando...</span>
     </div>
 
     <form id="fundo-form" class="mt-4">
+      <input type="hidden" id="station-id-field" name="station_id" value="default">
       <div class="drop-zone" id="drop-zone">
         <input type="file" id="fundo-input" name="fundo" accept=".png,.jpg,.jpeg" style="display:none;">
         <div class="drop-zone-inner" onclick="document.getElementById('fundo-input').click()">
-          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:#555; margin-bottom:10px;">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+               style="color:#555; margin-bottom:10px;">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
             <polyline points="17 8 12 3 7 8"/>
             <line x1="12" y1="3" x2="12" y2="15"/>
@@ -41,7 +45,7 @@
     </form>
   </div>
 
-  <!-- ── Status ─────────────────────────────────────────────── -->
+  <!-- ── Status do serviço ──────────────────────────────────── -->
   <div class="config-card mt-4" style="max-width:560px;">
     <h2 class="config-section-title">Status do serviço</h2>
 
@@ -74,11 +78,28 @@
 </div>
 
 <style>
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
 .config-section-title {
   font-size: 0.95rem;
   font-weight: 700;
   color: #E30613;
-  margin-bottom: 16px;
+  margin: 0;
+}
+.station-chip {
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-family: monospace;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid #2a2a2a;
+  color: #888;
+  white-space: nowrap;
 }
 
 .config-msg {
@@ -91,10 +112,8 @@
 .config-msg--success { background: rgba(34,197,94,0.12); border: 1px solid #22c55e; color: #22c55e; }
 .config-msg--error   { background: rgba(227,6,19,0.12);  border: 1px solid #E30613; color: #ff6b6b; }
 
-/* Fundo preview */
 .fundo-preview-wrap {
   position: relative;
-  display: inline-block;
   border-radius: 8px;
   overflow: hidden;
   border: 1px solid #2a2a2a;
@@ -109,27 +128,24 @@
 }
 .fundo-badge {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: 10px; right: 10px;
   padding: 3px 10px;
   border-radius: 20px;
   font-size: 0.75rem;
   font-weight: 700;
+  background: rgba(255,255,255,0.12);
+  color: #aaa;
 }
 .fundo-badge--custom  { background: rgba(34,197,94,0.85);  color: #fff; }
-.fundo-badge--default { background: rgba(255,255,255,0.15); color: #aaa; }
+.fundo-badge--default { background: rgba(255,255,255,0.12); color: #aaa; }
 
-/* Drop zone */
 .drop-zone {
   border: 2px dashed #2a2a2a;
   border-radius: 8px;
-  transition: border-color 0.2s, background 0.2s;
+  transition: border-color .2s, background .2s;
   cursor: pointer;
 }
-.drop-zone.dragover {
-  border-color: #E30613;
-  background: rgba(227,6,19,0.06);
-}
+.drop-zone.dragover { border-color: #E30613; background: rgba(227,6,19,0.06); }
 .drop-zone-inner {
   padding: 28px 20px;
   text-align: center;
@@ -137,72 +153,79 @@
   flex-direction: column;
   align-items: center;
 }
-.drop-zone-inner p {
-  color: #aaa;
-  margin: 0 0 4px;
-  font-size: 0.9rem;
-}
-.drop-zone-inner small {
-  color: #555;
-  font-size: 0.78rem;
-}
+.drop-zone-inner p    { color: #aaa; margin: 0 0 4px; font-size: .9rem; }
+.drop-zone-inner small { color: #555; font-size: .78rem; }
 
-/* Status bars */
 .status-bar {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 12px 16px;
   border-radius: 8px;
-  font-size: 0.88rem;
+  font-size: .88rem;
   border: 1px solid #2a2a2a;
   word-break: break-all;
 }
-.status-bar--on      { background: rgba(34,197,94,0.08);  border-color: rgba(34,197,94,0.2);  color: rgba(255,255,255,0.85); }
-.status-bar--off     { background: rgba(255,255,255,0.03); color: #555; }
-.status-bar--neutral { background: rgba(96,165,250,0.06); border-color: rgba(96,165,250,0.2); color: rgba(255,255,255,0.75); }
-.status-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-.status-bar--on  .status-dot { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
-.status-bar--off .status-dot { background: #444; }
+.status-bar--on      { background: rgba(34,197,94,0.08);  border-color: rgba(34,197,94,0.2);  color: rgba(255,255,255,.85); }
+.status-bar--off     { background: rgba(255,255,255,.03);  color: #555; }
+.status-bar--neutral { background: rgba(96,165,250,0.06); border-color: rgba(96,165,250,0.2); color: rgba(255,255,255,.75); }
+.status-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+.status-bar--on  .status-dot { background:#22c55e; box-shadow:0 0 6px #22c55e; }
+.status-bar--off .status-dot { background:#444; }
 
-label {
-  display: block;
-  font-size: 0.85rem;
-  color: #aaa;
-  margin-bottom: 6px;
-}
+label { display:block; font-size:.85rem; color:#aaa; margin-bottom:6px; }
 input[type="text"] {
-  width: 100%;
-  background: #111;
-  border: 1px solid #2a2a2a;
-  border-radius: 6px;
-  padding: 10px 14px;
-  color: #fff;
-  font-size: 0.9rem;
+  width:100%; background:#111; border:1px solid #2a2a2a;
+  border-radius:6px; padding:10px 14px; color:#fff; font-size:.9rem;
 }
-input[type="text"]:focus { outline: none; border-color: #E30613; }
-small { color: #555; font-size: 0.78rem; margin-top: 6px; display: block; }
-small code { background: #1a1a1a; padding: 1px 5px; border-radius: 4px; color: #ccc; }
-.mt-3 { margin-top: 12px; }
-.mt-4 { margin-top: 20px; }
-.mb-4 { margin-bottom: 20px; }
+input[type="text"]:focus { outline:none; border-color:#E30613; }
+small { color:#555; font-size:.78rem; margin-top:6px; display:block; }
+small code { background:#1a1a1a; padding:1px 5px; border-radius:4px; color:#ccc; }
+.mt-3 { margin-top:12px; }
+.mt-4 { margin-top:20px; }
+.mb-4 { margin-bottom:20px; }
 </style>
 
 <script>
-const dropZone   = document.getElementById('drop-zone');
-const fileInput  = document.getElementById('fundo-input');
-const dropLabel  = document.getElementById('drop-label');
-const btnUpload  = document.getElementById('btn-upload');
-const pageMsg    = document.getElementById('page-msg');
+// ── Station ID desta estação ──────────────────────────────────────────────────
+if (!localStorage.getItem('totem_station_id')) {
+  localStorage.setItem('totem_station_id', crypto.randomUUID());
+}
+const STATION_ID = localStorage.getItem('totem_station_id');
+const STATION_SHORT = STATION_ID.substring(0, 8);
+
+// Atualiza UI com station_id
+document.getElementById('station-id-field').value = STATION_ID;
+document.getElementById('station-chip').textContent = 'Estação ' + STATION_SHORT;
+
+// Carrega preview do fundo desta estação
+const previewImg = document.getElementById('fundo-preview');
+previewImg.src = '/fundo_preview?station=' + STATION_ID + '&t=' + Date.now();
+previewImg.onload = function() {
+  const badge = document.getElementById('fundo-badge');
+  // Se o servidor retornou o fundo padrão, a URL não tem cache local = padrão
+  // O servidor sempre responde 200, então verificamos via cookie de resposta não é trivial.
+  // Deixamos o badge ser atualizado via upload.
+  if (badge.textContent === 'Carregando...') {
+    badge.textContent = 'Padrão';
+    badge.className   = 'fundo-badge fundo-badge--default';
+  }
+};
+
+// ── Drag & drop ───────────────────────────────────────────────────────────────
+const dropZone  = document.getElementById('drop-zone');
+const fileInput = document.getElementById('fundo-input');
+const dropLabel = document.getElementById('drop-label');
+const btnUpload = document.getElementById('btn-upload');
+const pageMsg   = document.getElementById('page-msg');
 
 function showMsg(text, type) {
-  pageMsg.textContent  = text;
-  pageMsg.className    = `config-msg config-msg--${type}`;
+  pageMsg.textContent   = text;
+  pageMsg.className     = `config-msg config-msg--${type}`;
   pageMsg.style.display = 'block';
   pageMsg.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-// Drag & drop
 dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
 dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
 dropZone.addEventListener('drop', e => {
@@ -211,50 +234,49 @@ dropZone.addEventListener('drop', e => {
   const file = e.dataTransfer.files[0];
   if (file) setFile(file);
 });
-
-fileInput.addEventListener('change', () => {
-  if (fileInput.files[0]) setFile(fileInput.files[0]);
-});
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) setFile(fileInput.files[0]); });
 
 function setFile(file) {
   const dt = new DataTransfer();
   dt.items.add(file);
-  fileInput.files = dt.files;
-  dropLabel.textContent = file.name;
+  fileInput.files    = dt.files;
+  dropLabel.textContent     = file.name;
   dropZone.style.borderColor = '#E30613';
-  btnUpload.disabled = false;
+  btnUpload.disabled         = false;
 }
 
-// Upload
+// ── Upload ────────────────────────────────────────────────────────────────────
 document.getElementById('fundo-form').addEventListener('submit', async function(e) {
   e.preventDefault();
   if (!fileInput.files[0]) return;
 
-  btnUpload.disabled   = true;
+  btnUpload.disabled    = true;
   btnUpload.textContent = 'Enviando...';
 
   const formData = new FormData();
   formData.append('fundo', fileInput.files[0]);
+  formData.append('station_id', STATION_ID);
 
   try {
     const res  = await fetch('/upload_fundo', { method: 'POST', body: formData });
     const data = await res.json();
 
     if (data.success) {
-      document.getElementById('fundo-preview').src = '/fundo_preview?t=' + Date.now();
-      document.querySelector('.fundo-badge').textContent  = 'Personalizado';
-      document.querySelector('.fundo-badge').className    = 'fundo-badge fundo-badge--custom';
-      dropLabel.textContent    = 'Clique ou arraste a imagem aqui';
+      previewImg.src = '/fundo_preview?station=' + STATION_ID + '&t=' + Date.now();
+      const badge = document.getElementById('fundo-badge');
+      badge.textContent = 'Personalizado';
+      badge.className   = 'fundo-badge fundo-badge--custom';
+      dropLabel.textContent      = 'Clique ou arraste a imagem aqui';
       dropZone.style.borderColor = '';
       fileInput.value = '';
-      showMsg('Fundo atualizado com sucesso!', 'success');
+      showMsg('Fundo atualizado! As próximas fotos desta estação já usam o novo fundo.', 'success');
     } else {
       showMsg('Erro: ' + data.error, 'error');
     }
   } catch (err) {
     showMsg('Erro de conexão. Tente novamente.', 'error');
   } finally {
-    btnUpload.disabled   = false;
+    btnUpload.disabled    = false;
     btnUpload.textContent = 'Enviar novo fundo';
   }
 });

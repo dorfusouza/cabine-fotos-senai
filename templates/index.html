@@ -82,12 +82,18 @@ const statusEl = document.getElementById('status_text');
 const TOTAL   = 3;
 const TIMER   = 5;
 
-// ID único por aba/browser — isola o estado desta sessão no servidor
+// Station ID — identifica o totem/estação (persiste em localStorage)
+if (!localStorage.getItem('totem_station_id')) {
+  localStorage.setItem('totem_station_id', crypto.randomUUID());
+}
+const STATION_ID = localStorage.getItem('totem_station_id');
+
+// Session ID — isola cada sequência de 3 fotos (sessionStorage limpa ao fechar aba)
 if (!sessionStorage.getItem('totem_sid')) {
   sessionStorage.setItem('totem_sid', crypto.randomUUID());
 }
 const SID = sessionStorage.getItem('totem_sid');
-const qs  = () => `?sid=${SID}`;
+const qs  = () => `?sid=${SID}&station=${STATION_ID}`;
 
 let fotoSeq      = 0;
 let emContagem   = false;

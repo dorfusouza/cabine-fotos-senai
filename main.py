@@ -13,17 +13,16 @@ import cloudinary.api
 import cloudinary.uploader
 from flask import Flask, render_template, send_file, Response, request, jsonify, redirect
 from io import BytesIO
-from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-PHOTOS_DIR       = os.path.join(app.root_path, 'static', 'photos')
-FUNDO_DEFAULT    = os.path.join(app.root_path, 'static', 'images', 'mundosenai.png')
-FUNDO_CACHE      = os.path.join(app.root_path, 'static', 'images', 'fundo_cache.png')
-FUNDO_CLOUD_ID   = 'cabinefotos/fundo'
-ALLOWED_EXT      = {'png', 'jpg', 'jpeg'}
-os.makedirs(PHOTOS_DIR, exist_ok=True)
+PHOTOS_DIR     = os.path.join(app.root_path, 'static', 'photos')
+FUNDO_DEFAULT  = os.path.join(app.root_path, 'static', 'images', 'mundosenai.png')
+FUNDO_CACHE_DIR = os.path.join(app.root_path, 'static', 'fundos')
+ALLOWED_EXT    = {'png', 'jpg', 'jpeg'}
+os.makedirs(PHOTOS_DIR,     exist_ok=True)
+os.makedirs(FUNDO_CACHE_DIR, exist_ok=True)
 
 # ── Configuração via variáveis de ambiente ────────────────────────────────────
 APP_URL = os.environ.get('APP_URL', 'http://localhost:2205/')
@@ -40,36 +39,64 @@ if CLOUDINARY_CONFIGURED:
 else:
     print(" * Cloudinary NÃO configurado — usando armazenamento local")
 
-# ── Fundo atual (pode ser trocado via upload) ─────────────────────────────────
-_fundo_lock = threading.Lock()
-_fundo_path = FUNDO_DEFAULT
+# ── Fundos por estação ────────────────────────────────────────────────────────
+_station_backgrounds: dict[str, str] = {}
+_sbg_lock = threading.Lock()
 
 
-def get_fundo_path() -> str:
-    with _fundo_lock:
-        return _fundo_path
+def _station_cache_path(station_id: str) -> str:
+    return os.path.join(FUNDO_CACHE_DIR, f'fundo_{station_id[:8]}.png')
 
 
-def set_fundo_path(path: str):
-    global _fundo_path
-    with _fundo_lock:
-        _fundo_path = path
+def get_station_fundo(station_id: str) -> str:
+    """Retorna o caminho do fundo desta estação.
+    Busca em: memória → disco → Cloudinary → padrão."""
+    with _sbg_lock:
+        if station_id in _station_backgrounds:
+            return _station_backgrounds[station_id]
+
+    cache_path = _station_cache_path(station_id)
+    if os.path.exists(cache_path):
+        with _sbg_lock:
+            _station_backgrounds[station_id] = cache_path
+        return cache_path
+
+    if CLOUDINARY_CONFIGURED:
+        try:
+            public_id = f'cabinefotos/fundo_{station_id[:8]}'
+            resource  = cloudinary.api.resource(public_id)
+            urllib.request.urlretrieve(resource['secure_url'], cache_path)
+            with _sbg_lock:
+                _station_backgrounds[station_id] = cache_path
+            print(f" * Fundo estação {station_id[:8]} carregado do Cloudinary")
+            return cache_path
+        except Exception:
+            pass
+
+    return FUNDO_DEFAULT
 
 
-def sincronizar_fundo():
-    """Na inicialização baixa o fundo customizado do Cloudinary se existir."""
-    if not CLOUDINARY_CONFIGURED:
-        return
-    try:
-        resource = cloudinary.api.resource(FUNDO_CLOUD_ID)
-        urllib.request.urlretrieve(resource['secure_url'], FUNDO_CACHE)
-        set_fundo_path(FUNDO_CACHE)
-        print(" * Fundo customizado carregado do Cloudinary")
-    except Exception:
-        print(" * Nenhum fundo customizado no Cloudinary — usando padrão")
+def set_station_fundo(station_id: str, source_path: str) -> str:
+    """Salva o fundo da estação localmente e sobe para o Cloudinary."""
+    cache_path = _station_cache_path(station_id)
+    shutil.copy(source_path, cache_path)
+    with _sbg_lock:
+        _station_backgrounds[station_id] = cache_path
 
+    if CLOUDINARY_CONFIGURED:
+        try:
+            public_id = f'cabinefotos/fundo_{station_id[:8]}'
+            cloudinary.uploader.upload(
+                cache_path,
+                public_id=public_id,
+                overwrite=True,
+                resource_type='image',
+            )
+        except Exception as e:
+            print(f" * Cloudinary fundo upload error: {e}")
 
-sincronizar_fundo()
+    return cache_path
+
 
 # ── Estado por sessão ─────────────────────────────────────────────────────────
 _sessions: dict = {}
@@ -89,19 +116,17 @@ def get_session(sid: str) -> dict:
         return _sessions[sid]
 
 
-# ── Cloudinary helpers ────────────────────────────────────────────────────────
-def upload_cloudinary(filepath: str, public_id: str = None, overwrite: bool = False) -> str | None:
+# ── Cloudinary upload de fotos ────────────────────────────────────────────────
+def upload_foto_cloudinary(filepath: str) -> str | None:
     if not CLOUDINARY_CONFIGURED:
         return None
     try:
-        kwargs = dict(folder='cabinefotos', resource_type='image')
-        if public_id:
-            kwargs['public_id'] = public_id
-            kwargs['overwrite']  = overwrite
-        result = cloudinary.uploader.upload(filepath, **kwargs)
+        result = cloudinary.uploader.upload(
+            filepath, folder='cabinefotos', resource_type='image'
+        )
         return result['secure_url']
     except Exception as e:
-        print(f" * Cloudinary upload error: {e}")
+        print(f" * Cloudinary foto upload error: {e}")
         return None
 
 
@@ -123,19 +148,19 @@ def configuracao():
             APP_URL = url if url.endswith('/') else url + '/'
             msg = ('success', f'URL atualizada: {APP_URL}')
 
-    fundo_customizado = os.path.exists(FUNDO_CACHE)
     return render_template(
         'configuracao.html',
         app_url=APP_URL,
         cloudinary_ok=CLOUDINARY_CONFIGURED,
         cloudinary_cloud=os.environ.get('CLOUDINARY_CLOUD_NAME', '—'),
-        fundo_customizado=fundo_customizado,
         msg=msg,
     )
 
 
 @app.route('/upload_fundo', methods=['POST'])
 def upload_fundo():
+    station_id = request.form.get('station_id', 'default')
+
     if 'fundo' not in request.files:
         return jsonify(success=False, error='Nenhum arquivo enviado'), 400
 
@@ -144,27 +169,31 @@ def upload_fundo():
     if not ext or ext not in ALLOWED_EXT:
         return jsonify(success=False, error='Formato inválido. Use PNG ou JPG.'), 400
 
-    file.save(FUNDO_CACHE)
-    set_fundo_path(FUNDO_CACHE)
-
-    # Sobe para Cloudinary com ID fixo (overwrite) para persistir entre restarts
-    upload_cloudinary(FUNDO_CACHE, public_id=FUNDO_CLOUD_ID, overwrite=True)
+    tmp = os.path.join(FUNDO_CACHE_DIR, f'tmp_{uuid.uuid4()}.{ext}')
+    try:
+        file.save(tmp)
+        if cv2.imread(tmp) is None:
+            return jsonify(success=False, error='Arquivo inválido ou corrompido.'), 400
+        set_station_fundo(station_id, tmp)
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
 
     return jsonify(success=True)
 
 
 @app.route('/fundo_preview')
 def fundo_preview():
-    path = get_fundo_path()
-    if not os.path.exists(path):
-        path = FUNDO_DEFAULT
+    station_id = request.args.get('station', 'default')
+    path = get_station_fundo(station_id)
     return send_file(path, mimetype='image/png')
 
 
 @app.route('/upload_foto', methods=['POST'])
 def upload_foto():
-    sid  = request.args.get('sid', 'default')
-    sess = get_session(sid)
+    sid        = request.args.get('sid',     'default')
+    station_id = request.args.get('station', 'default')
+    sess       = get_session(sid)
 
     x, y_base, w, h, borda = 74, 220, 900, 550, 10
 
@@ -189,13 +218,21 @@ def upload_foto():
     sess['foto_seq'] += 1
 
     if sess['foto_seq'] == 3:
-        moldura   = cv2.imread(get_fundo_path())
+        fundo_path = get_station_fundo(station_id)
+        moldura    = cv2.imread(fundo_path)
+        if moldura is None:
+            moldura = cv2.imread(FUNDO_DEFAULT)
+        if moldura is None:
+            return jsonify(success=False, error='Fundo não pôde ser carregado'), 500
+
         nome_comp = f'foto_{uuid.uuid4()}.png'
         bg_foto   = np.zeros((h + borda, w + borda, 3), dtype=np.uint8)
 
         y = y_base
         for seq in range(3):
             foto = cv2.imread(os.path.join(PHOTOS_DIR, f'{sid_pfx}_foto_{seq}.png'))
+            if foto is None:
+                continue
             moldura[y - borda//2 : y + h + borda//2,
                     x - borda//2 : x + w + borda//2] = bg_foto
             moldura[y : y + h, x : x + w] = foto
@@ -204,7 +241,7 @@ def upload_foto():
         comp_path = os.path.join(PHOTOS_DIR, nome_comp)
         cv2.imwrite(comp_path, moldura)
 
-        cloud_url = upload_cloudinary(comp_path)
+        cloud_url = upload_foto_cloudinary(comp_path)
 
         sess['nome_foto']      = nome_comp
         sess['cloudinary_url'] = cloud_url
