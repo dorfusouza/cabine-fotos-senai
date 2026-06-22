@@ -100,11 +100,17 @@ if (!sessionStorage.getItem('totem_sid')) {
 const SID = sessionStorage.getItem('totem_sid');
 const qs  = () => `?sid=${SID}&station=${STATION_ID}`;
 
-let fotoSeq      = 0;
-let emContagem   = false;
-let emEspera     = false;
-let capturando   = false;
+let fotoSeq        = 0;
+let emContagem     = false;
+let emEspera       = false;
+let capturando     = false;
 let countdownStart = null;
+
+// Hold-to-trigger: palma deve ficar levantada por HOLD_REQUIRED ms
+const HOLD_REQUIRED = 3000;
+const HOLD_GRACE    = 300;   // tolerância para frames perdidos pelo MediaPipe
+let handHoldStart   = null;
+let handLastSeen    = 0;
 
 // ── Indicadores de passo ─────────────────────────────────
 function atualizarSteps() {
@@ -259,12 +265,62 @@ function onResults(results) {
     drawConnectors(ctx, lm, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 3 });
     drawLandmarks(ctx,  lm,                   { color: '#FF0000', lineWidth: 2, radius: 4 });
 
-    if (!emContagem && !emEspera && !capturando && detectaPalma(lm)) {
-      iniciarContagem();
+    if (!emContagem && !emEspera && !capturando) {
+      if (detectaPalma(lm)) {
+        handLastSeen = Date.now();
+        if (handHoldStart === null) {
+          handHoldStart = Date.now();
+          setStatus('Segure a mão levantada...', 'capturing');
+        } else if (Date.now() - handHoldStart >= HOLD_REQUIRED) {
+          handHoldStart = null;
+          iniciarContagem();
+        }
+      } else if (handHoldStart !== null && Date.now() - handLastSeen > HOLD_GRACE) {
+        handHoldStart = null;
+        setStatus('Levante a palma da mão para iniciar');
+      }
+    }
+  } else if (handHoldStart !== null && !emContagem && !emEspera && !capturando) {
+    if (Date.now() - handLastSeen > HOLD_GRACE) {
+      handHoldStart = null;
+      setStatus('Levante a palma da mão para iniciar');
     }
   }
 
   ctx.restore(); // remove espelhamento para os overlays de texto
+
+  // Overlay: arco de progresso do hold (3s antes de iniciar contagem)
+  if (handHoldStart !== null && !emContagem && !emEspera && !capturando) {
+    const held     = Math.min(Date.now() - handHoldStart, HOLD_REQUIRED);
+    const progress = held / HOLD_REQUIRED;
+    const cx = canvasEl.width / 2;
+    const cy = canvasEl.height / 2;
+    const r  = 72;
+    ctx.save();
+    // Anel de fundo
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.lineWidth   = 10;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+    // Arco de progresso
+    ctx.strokeStyle = '#E30613';
+    ctx.lineWidth   = 10;
+    ctx.lineCap     = 'round';
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress);
+    ctx.stroke();
+    // Segundos restantes
+    const secsLeft = Math.ceil((HOLD_REQUIRED - held) / 1000);
+    ctx.font         = 'bold 64px "Segoe UI", Arial';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor  = 'rgba(0,0,0,0.7)';
+    ctx.shadowBlur   = 14;
+    ctx.fillStyle    = '#fff';
+    ctx.fillText(secsLeft > 0 ? secsLeft : '', cx, cy);
+    ctx.restore();
+  }
 
   // Overlay: countdown
   if (emContagem) {
@@ -368,6 +424,8 @@ function resetarEstado() {
   emEspera       = false;
   capturando     = false;
   countdownStart = null;
+  handHoldStart  = null;
+  handLastSeen   = 0;
   atualizarSteps();
   setStatus('Levante a palma da mão para iniciar');
 }
