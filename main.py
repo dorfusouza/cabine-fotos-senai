@@ -784,6 +784,68 @@ def admin_evento_reativar(event_id):
     return redirect('/admin/eventos')
 
 
+@app.route('/admin/fotos')
+@require_admin
+def admin_fotos_sem_evento():
+    """Galeria de fotos sem evento vinculado (path legado cabinefotos/fotos/)."""
+    photos = []
+    if CLOUDINARY_CONFIGURED:
+        try:
+            result = cloudinary.api.resources(
+                type='upload', prefix='cabinefotos/fotos/',
+                max_results=500, direction='desc',
+            )
+            for r in result.get('resources', []):
+                url   = r['secure_url']
+                thumb = url.replace('/upload/', '/upload/w_320,c_limit/', 1)
+                photos.append({'url': url, 'thumb': thumb,
+                               'name': r['public_id'].split('/')[-1]})
+        except Exception as e:
+            print(f" * Admin fotos sem evento: {e}")
+    else:
+        fnames = sorted(
+            (f for f in os.listdir(PHOTOS_DIR)
+             if f.startswith('foto_') and f.endswith('.png')
+             and os.path.isfile(os.path.join(PHOTOS_DIR, f))),
+            key=lambda f: os.path.getmtime(os.path.join(PHOTOS_DIR, f)),
+            reverse=True,
+        )
+        for fname in fnames:
+            photos.append({'url': f'/static/photos/{fname}',
+                           'thumb': f'/static/photos/{fname}',
+                           'name': fname})
+    return render_template('admin_galeria.html',
+                           evento=None,
+                           photos=photos,
+                           total=len(photos),
+                           cloudinary_ok=CLOUDINARY_CONFIGURED)
+
+
+@app.route('/admin/fotos/zip')
+@require_admin
+def admin_fotos_sem_evento_zip():
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        if CLOUDINARY_CONFIGURED:
+            try:
+                result = cloudinary.api.resources(
+                    type='upload', prefix='cabinefotos/fotos/', max_results=500)
+                for r in result.get('resources', []):
+                    fname    = r['public_id'].split('/')[-1] + '.png'
+                    img_data = urllib.request.urlopen(r['secure_url']).read()
+                    zf.writestr(fname, img_data)
+            except Exception as e:
+                print(f" * Fotos sem evento ZIP: {e}")
+        else:
+            for fname in os.listdir(PHOTOS_DIR):
+                if fname.startswith('foto_') and fname.endswith('.png') \
+                        and os.path.isfile(os.path.join(PHOTOS_DIR, fname)):
+                    zf.write(os.path.join(PHOTOS_DIR, fname), fname)
+    buf.seek(0)
+    return send_file(buf, mimetype='application/zip',
+                     as_attachment=True, download_name='fotos_sem_evento.zip')
+
+
 @app.route('/admin/eventos/<event_id>/zip')
 @require_admin
 def admin_evento_zip(event_id):
