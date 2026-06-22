@@ -174,7 +174,7 @@
 
       </div>
       <div style="margin-top:18px;">
-        <button type="submit" class="btn btn-red">Criar evento</button>
+        <button type="submit" class="btn btn-red" id="btn-criar">Criar evento</button>
       </div>
     </form>
   </div>
@@ -238,10 +238,16 @@
 <footer>SENAI-LP · Totem de Fotos · Área Administrativa</footer>
 
 <script>
-// Atualiza label do file input
 document.getElementById('fundo-input').addEventListener('change', function() {
   const lbl = document.getElementById('fundo-lbl');
   lbl.innerHTML = this.files[0] ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> ${this.files[0].name}` : 'Escolher imagem';
+});
+
+// Previne duplo clique no botão de criar evento
+document.querySelector('form[action="/admin/eventos/novo"]').addEventListener('submit', function() {
+  const btn = document.getElementById('btn-criar');
+  btn.disabled    = true;
+  btn.textContent = 'Criando...';
 });
 </script>
 

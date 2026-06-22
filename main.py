@@ -517,18 +517,28 @@ def upload_foto():
         if event_id:
             event_dir = os.path.join(PHOTOS_DIR, event_id)
             os.makedirs(event_dir, exist_ok=True)
-            comp_path = os.path.join(event_dir, nome_comp)
+            comp_path   = os.path.join(event_dir, nome_comp)
+            nome_local  = os.path.join(event_id, nome_comp)
         else:
-            comp_path = os.path.join(PHOTOS_DIR, nome_comp)
+            comp_path  = os.path.join(PHOTOS_DIR, nome_comp)
+            nome_local = nome_comp
         cv2.imwrite(comp_path, moldura)
 
         event_name = cfg.get('event_name', 'SENAI — Totem de Fotos')
-        cloud_url  = upload_foto_cloudinary(comp_path, photo_id, event_id, event_name)
-        registrar_foto(photo_id, cloud_url, station_id, event_id, event_name)
-        if event_id:
-            event_store.increment_photos(event_id)
+        cloud_url  = None
+        try:
+            cloud_url = upload_foto_cloudinary(comp_path, photo_id, event_id, event_name)
+            registrar_foto(photo_id, cloud_url, station_id, event_id, event_name)
+            if event_id:
+                threading.Thread(
+                    target=event_store.increment_photos,
+                    args=(event_id,),
+                    daemon=True,
+                ).start()
+        except Exception as e:
+            print(f' * upload_foto composite error: {e}')
 
-        sess['nome_foto']      = nome_comp
+        sess['nome_foto']      = nome_local
         sess['photo_id']       = photo_id
         sess['cloudinary_url'] = cloud_url
         sess['foto_capturada'] = True
