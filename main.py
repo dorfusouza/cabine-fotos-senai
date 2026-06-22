@@ -663,7 +663,7 @@ def admin_login():
 @app.route('/admin/logout')
 def admin_logout():
     session.pop('admin', None)
-    return redirect('/admin/login')
+    return redirect('/index')
 
 
 @app.route('/admin')
@@ -747,11 +747,15 @@ def admin_evento_fotos(event_id):
     else:
         event_dir = os.path.join(PHOTOS_DIR, event_id)
         if os.path.exists(event_dir):
-            for fname in sorted(os.listdir(event_dir), reverse=True):
-                if fname.startswith('foto_') and fname.endswith('.png'):
-                    photos.append({'url': f'/static/photos/{event_id}/{fname}',
-                                   'thumb': f'/static/photos/{event_id}/{fname}',
-                                   'name': fname})
+            fnames = sorted(
+                (f for f in os.listdir(event_dir) if f.startswith('foto_') and f.endswith('.png')),
+                key=lambda f: os.path.getmtime(os.path.join(event_dir, f)),
+                reverse=True,
+            )
+            for fname in fnames:
+                photos.append({'url': f'/static/photos/{event_id}/{fname}',
+                               'thumb': f'/static/photos/{event_id}/{fname}',
+                               'name': fname})
 
     return render_template('admin_galeria.html',
                            evento=ev,
