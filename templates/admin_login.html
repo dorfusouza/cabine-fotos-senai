@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin — Totem de Fotos</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0d0d0d;
+      color: #fff;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .card {
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 14px;
+      padding: 40px 36px;
+      width: 100%;
+      max-width: 380px;
+    }
+    .logo { text-align: center; margin-bottom: 28px; }
+    .logo .brand { font-size: 1.6rem; font-weight: 800; color: #E30613; letter-spacing: 3px; }
+    .logo .sub   { font-size: 0.7rem; color: rgba(255,255,255,0.4); letter-spacing: 3px; text-transform: uppercase; margin-top: 2px; }
+
+    h2 { font-size: 1rem; font-weight: 600; color: rgba(255,255,255,0.7); margin-bottom: 24px; text-align: center; }
+
+    label { display: block; font-size: .8rem; color: #888; margin-bottom: 6px; }
+    input[type="password"] {
+      width: 100%; background: #111; border: 1px solid #2a2a2a;
+      border-radius: 6px; padding: 11px 14px; color: #fff; font-size: .95rem;
+      outline: none; transition: border-color .2s;
+    }
+    input[type="password"]:focus { border-color: #E30613; }
+
+    .error {
+      background: rgba(227,6,19,0.1);
+      border: 1px solid rgba(227,6,19,0.4);
+      color: #ff6b6b;
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: .85rem;
+      margin-bottom: 16px;
+    }
+
+    button {
+      margin-top: 18px;
+      width: 100%;
+      background: #E30613;
+      color: white;
+      border: none;
+      font-weight: 700;
+      font-size: .95rem;
+      padding: 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background .2s;
+    }
+    button:hover { background: #b3000f; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <div class="brand">SENAI</div>
+      <div class="sub">Área administrativa</div>
+    </div>
+    <h2>Acesso restrito</h2>
+
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post">
+      <label for="password">Senha de administrador</label>
+      <input type="password" id="password" name="password" autofocus autocomplete="current-password">
+      <button type="submit">Entrar</button>
+    </form>
+  </div>
+</body>
+</html>

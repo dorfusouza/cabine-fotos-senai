@@ -3,6 +3,8 @@ import uuid
 import base64
 import shutil
 import threading
+import zipfile
+import functools
 import urllib.parse
 import urllib.request
 
@@ -12,10 +14,11 @@ import qrcode
 import cloudinary
 import cloudinary.api
 import cloudinary.uploader
-from flask import Flask, render_template, send_file, Response, request, jsonify, redirect
+from flask import Flask, render_template, send_file, Response, request, jsonify, redirect, session
 from io import BytesIO
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 PHOTOS_DIR     = os.path.join(app.root_path, 'static', 'photos')
@@ -26,7 +29,8 @@ os.makedirs(PHOTOS_DIR,     exist_ok=True)
 os.makedirs(FUNDO_CACHE_DIR, exist_ok=True)
 
 # ── Configuração via variáveis de ambiente ────────────────────────────────────
-APP_URL = os.environ.get('APP_URL', 'http://localhost:2205/')
+APP_URL        = os.environ.get('APP_URL', 'http://localhost:2205/')
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', '')
 
 CLOUDINARY_CONFIGURED = bool(os.environ.get('CLOUDINARY_CLOUD_NAME'))
 if CLOUDINARY_CONFIGURED:
@@ -500,6 +504,94 @@ def esperadetect():
     sess = get_session(sid)
     sess['espera'] = False
     return 'ok'
+
+
+# ── Admin ─────────────────────────────────────────────────────────────────────
+def require_admin(f):
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        if not session.get('admin'):
+            return redirect('/admin/login')
+        return f(*args, **kwargs)
+    return wrapper
+
+
+@app.route('/admin/login', methods=['GET', 'POST'])
+def admin_login():
+    error = None
+    if request.method == 'POST':
+        if not ADMIN_PASSWORD:
+            error = 'Senha de admin não configurada (defina a variável ADMIN_PASSWORD).'
+        elif request.form.get('password') == ADMIN_PASSWORD:
+            session['admin'] = True
+            return redirect('/admin')
+        else:
+            error = 'Senha incorreta.'
+    return render_template('admin_login.html', error=error)
+
+
+@app.route('/admin/logout')
+def admin_logout():
+    session.pop('admin', None)
+    return redirect('/admin/login')
+
+
+@app.route('/admin')
+@require_admin
+def admin_galeria():
+    photos = []
+
+    if CLOUDINARY_CONFIGURED:
+        try:
+            result = cloudinary.api.resources(
+                type='upload',
+                prefix='cabinefotos/fotos/',
+                max_results=500,
+                direction='desc',
+            )
+            for r in result.get('resources', []):
+                url = r['secure_url']
+                # URL de thumbnail: insere transformação após /upload/
+                thumb = url.replace('/upload/', '/upload/w_320,c_limit/', 1)
+                photos.append({'url': url, 'thumb': thumb, 'name': r['public_id'].split('/')[-1]})
+        except Exception as e:
+            print(f" * Admin Cloudinary list error: {e}")
+    else:
+        for fname in sorted(os.listdir(PHOTOS_DIR), reverse=True):
+            if fname.startswith('foto_') and fname.endswith('.png'):
+                photos.append({'url': f'/static/photos/{fname}',
+                               'thumb': f'/static/photos/{fname}',
+                               'name': fname})
+
+    return render_template('admin_galeria.html',
+                           photos=photos,
+                           total=len(photos),
+                           cloudinary_ok=CLOUDINARY_CONFIGURED)
+
+
+@app.route('/admin/zip')
+@require_admin
+def admin_zip():
+    """Gera ZIP com todas as fotos compostas."""
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        if CLOUDINARY_CONFIGURED:
+            try:
+                result = cloudinary.api.resources(
+                    type='upload', prefix='cabinefotos/fotos/', max_results=500)
+                for r in result.get('resources', []):
+                    fname    = r['public_id'].split('/')[-1] + '.png'
+                    img_data = urllib.request.urlopen(r['secure_url']).read()
+                    zf.writestr(fname, img_data)
+            except Exception as e:
+                print(f" * Admin ZIP Cloudinary error: {e}")
+        else:
+            for fname in os.listdir(PHOTOS_DIR):
+                if fname.startswith('foto_') and fname.endswith('.png'):
+                    zf.write(os.path.join(PHOTOS_DIR, fname), fname)
+    buf.seek(0)
+    return send_file(buf, mimetype='application/zip',
+                     as_attachment=True, download_name='fotos_evento.zip')
 
 
 if __name__ == '__main__':

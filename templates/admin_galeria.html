@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Galeria Admin — Totem de Fotos</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0d0d0d;
+      color: #fff;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    header {
+      background: #E30613;
+      padding: 0 28px;
+      height: 62px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      box-shadow: 0 2px 16px rgba(0,0,0,0.5);
+    }
+    .header-left { display: flex; align-items: center; gap: 14px; }
+    .brand { font-size: 1.2rem; font-weight: 800; color: white; letter-spacing: 2px; }
+    .sub   { font-size: 0.62rem; color: rgba(255,255,255,0.75); letter-spacing: 3px; text-transform: uppercase; }
+    .header-right { display: flex; align-items: center; gap: 12px; }
+
+    .badge {
+      background: rgba(255,255,255,0.2);
+      color: white;
+      font-weight: 700;
+      font-size: .8rem;
+      padding: 4px 12px;
+      border-radius: 20px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-weight: 600;
+      font-size: .85rem;
+      padding: 7px 16px;
+      border-radius: 6px;
+      text-decoration: none;
+      cursor: pointer;
+      border: none;
+      transition: background .2s, opacity .2s;
+    }
+    .btn-white  { background: white; color: #E30613; }
+    .btn-white:hover { opacity: .88; }
+    .btn-ghost  { background: rgba(255,255,255,.15); color: white; }
+    .btn-ghost:hover { background: rgba(255,255,255,.25); }
+
+    /* ── Content ── */
+    .content { flex: 1; padding: 28px; }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .toolbar h1 {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: rgba(255,255,255,.85);
+    }
+    .toolbar-actions { display: flex; gap: 10px; align-items: center; }
+
+    /* Cloudinary badge */
+    .storage-badge {
+      font-size: .75rem;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-weight: 600;
+    }
+    .storage-badge--cloud { background: rgba(34,197,94,.15); border: 1px solid #22c55e; color: #22c55e; }
+    .storage-badge--local { background: rgba(255,255,255,.05); border: 1px solid #2a2a2a; color: #666; }
+
+    /* ── Photo grid ── */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 12px;
+    }
+
+    .photo-card {
+      position: relative;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid #2a2a2a;
+      background: #1a1a1a;
+      cursor: pointer;
+      transition: border-color .2s, transform .15s;
+    }
+    .photo-card:hover { border-color: #E30613; transform: scale(1.02); }
+    .photo-card img {
+      width: 100%;
+      aspect-ratio: 9/16;
+      object-fit: cover;
+      display: block;
+    }
+    .photo-card .photo-name {
+      padding: 6px 8px;
+      font-size: .68rem;
+      color: #555;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* ── Empty state ── */
+    .empty {
+      text-align: center;
+      padding: 80px 20px;
+      color: #444;
+    }
+    .empty svg { margin-bottom: 16px; opacity: .3; }
+    .empty p { font-size: 1rem; }
+
+    /* ── Lightbox ── */
+    #lightbox {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.92);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 16px;
+    }
+    #lightbox.open { display: flex; }
+    #lightbox img {
+      max-width: 92vw;
+      max-height: 82vh;
+      border-radius: 8px;
+      object-fit: contain;
+      box-shadow: 0 8px 40px rgba(0,0,0,.8);
+    }
+    .lb-actions { display: flex; gap: 12px; }
+    .lb-close {
+      position: absolute;
+      top: 20px; right: 24px;
+      background: none;
+      border: none;
+      color: rgba(255,255,255,.6);
+      font-size: 1.6rem;
+      cursor: pointer;
+      line-height: 1;
+    }
+    .lb-close:hover { color: white; }
+    .btn-dark { background: #1a1a1a; border: 1px solid #2a2a2a; color: white; }
+    .btn-dark:hover { border-color: #444; }
+    .btn-red  { background: #E30613; color: white; }
+    .btn-red:hover { background: #b3000f; }
+
+    footer {
+      text-align: center;
+      padding: 12px;
+      color: #2a2a2a;
+      font-size: .72rem;
+      border-top: 1px solid #1a1a1a;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <div>
+      <div class="brand">SENAI</div>
+      <div class="sub">Galeria Admin</div>
+    </div>
+    <span class="badge">{{ total }} foto{{ 's' if total != 1 else '' }}</span>
+  </div>
+  <div class="header-right">
+    {% if total > 0 %}
+    <a href="/admin/zip" class="btn btn-white">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="7 10 12 15 17 10"/>
+        <line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+      Baixar ZIP
+    </a>
+    {% endif %}
+    <a href="/admin/logout" class="btn btn-ghost">Sair</a>
+  </div>
+</header>
+
+<div class="content">
+  <div class="toolbar">
+    <h1>Fotos capturadas</h1>
+    <div class="toolbar-actions">
+      <span class="storage-badge {% if cloudinary_ok %}storage-badge--cloud{% else %}storage-badge--local{% endif %}">
+        {% if cloudinary_ok %}☁ Cloudinary{% else %}💾 Local{% endif %}
+      </span>
+    </div>
+  </div>
+
+  {% if photos %}
+  <div class="grid">
+    {% for p in photos %}
+    <div class="photo-card" onclick="openLightbox('{{ p.url }}', '{{ p.name }}')">
+      <img src="{{ p.thumb }}" alt="{{ p.name }}" loading="lazy">
+      <div class="photo-name">{{ p.name }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty">
+    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+      <polyline points="21 15 16 10 5 21"/>
+    </svg>
+    <p>Nenhuma foto encontrada.</p>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Lightbox -->
+<div id="lightbox" onclick="closeLightbox()">
+  <button class="lb-close" onclick="closeLightbox()">✕</button>
+  <img id="lb-img" src="" alt="">
+  <div class="lb-actions" onclick="event.stopPropagation()">
+    <a id="lb-download" href="" download class="btn btn-dark">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="7 10 12 15 17 10"/>
+        <line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+      Baixar
+    </a>
+  </div>
+</div>
+
+<footer>SENAI-LP · Totem de Fotos · Área Administrativa</footer>
+
+<script>
+function openLightbox(url, name) {
+  document.getElementById('lb-img').src        = url;
+  document.getElementById('lb-download').href  = url;
+  document.getElementById('lb-download').download = name;
+  document.getElementById('lightbox').classList.add('open');
+}
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('open');
+  document.getElementById('lb-img').src = '';
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+</script>
+
+</body>
+</html>
