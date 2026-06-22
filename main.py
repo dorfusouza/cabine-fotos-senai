@@ -736,7 +736,7 @@ def admin_evento_fotos(event_id):
         try:
             prefix = f'cabinefotos/events/{event_id}/fotos/'
             result = cloudinary.api.resources(type='upload', prefix=prefix,
-                                              max_results=500, direction='desc')
+                                              max_results=500, direction='asc')
             for r in result.get('resources', []):
                 url   = r['secure_url']
                 thumb = url.replace('/upload/', '/upload/w_320,c_limit/', 1)
@@ -750,7 +750,7 @@ def admin_evento_fotos(event_id):
             fnames = sorted(
                 (f for f in os.listdir(event_dir) if f.startswith('foto_') and f.endswith('.png')),
                 key=lambda f: os.path.getmtime(os.path.join(event_dir, f)),
-                reverse=True,
+                reverse=False,
             )
             for fname in fnames:
                 photos.append({'url': f'/static/photos/{event_id}/{fname}',
@@ -793,7 +793,7 @@ def admin_fotos_sem_evento():
         try:
             result = cloudinary.api.resources(
                 type='upload', prefix='cabinefotos/fotos/',
-                max_results=500, direction='desc',
+                max_results=500, direction='asc',
             )
             for r in result.get('resources', []):
                 url   = r['secure_url']
@@ -808,7 +808,7 @@ def admin_fotos_sem_evento():
              if f.startswith('foto_') and f.endswith('.png')
              and os.path.isfile(os.path.join(PHOTOS_DIR, f))),
             key=lambda f: os.path.getmtime(os.path.join(PHOTOS_DIR, f)),
-            reverse=True,
+            reverse=False,
         )
         for fname in fnames:
             photos.append({'url': f'/static/photos/{fname}',
