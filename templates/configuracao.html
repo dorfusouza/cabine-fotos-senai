@@ -4,7 +4,7 @@
 {% block conteudo %}
 <div class="page-content">
   <h1 class="page-title">Configurações</h1>
-  <p class="page-subtitle">Cada estação tem seu próprio fundo — configurações são independentes</p>
+  <p class="page-subtitle">Vincule a estação a um evento — o fundo e as configurações vêm do evento</p>
 
   <div id="page-msg" class="config-msg" style="display:none; max-width:560px;"></div>
 
@@ -12,42 +12,12 @@
   <div class="config-msg config-msg--{{ msg[0] }}" style="max-width:560px;">{{ msg[1] }}</div>
   {% endif %}
 
-  <!-- ── Fundo da estação ───────────────────────────────────── -->
-  <div class="config-card" style="max-width:560px;">
-    <div class="section-header">
-      <h2 class="config-section-title">Imagem de fundo desta estação</h2>
-      <span class="station-chip" id="station-chip">Estação —</span>
-    </div>
-
-    <div class="fundo-preview-wrap">
-      <img id="fundo-preview" src="/fundo_preview?station=default"
-           alt="Fundo atual" class="fundo-preview-img">
-      <span class="fundo-badge" id="fundo-badge">Carregando...</span>
-    </div>
-
-    <form id="fundo-form" class="mt-4">
-      <input type="hidden" id="station-id-field" name="station_id" value="default">
-      <div class="drop-zone" id="drop-zone">
-        <input type="file" id="fundo-input" name="fundo" accept=".png,.jpg,.jpeg" style="display:none;">
-        <div class="drop-zone-inner" onclick="document.getElementById('fundo-input').click()">
-          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-               stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
-               style="color:#555; margin-bottom:10px;">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-            <polyline points="17 8 12 3 7 8"/>
-            <line x1="12" y1="3" x2="12" y2="15"/>
-          </svg>
-          <p id="drop-label">Clique ou arraste a imagem aqui</p>
-          <small>PNG ou JPG · A imagem deve ter as mesmas dimensões do fundo atual</small>
-        </div>
-      </div>
-      <button type="submit" class="btn-senai mt-3" id="btn-upload" disabled>Enviar novo fundo</button>
-    </form>
-  </div>
-
   <!-- ── Configuração do evento ────────────────────────────── -->
   <div class="config-card mt-4" style="max-width:560px;">
-    <h2 class="config-section-title">Configuração do evento</h2>
+    <div class="section-header">
+      <h2 class="config-section-title">Configuração do evento</h2>
+      <span class="station-chip" id="station-chip">Estação —</span>
+    </div>
 
     <form id="event-form">
       <input type="hidden" id="station-id-event" name="station_id" value="default">
@@ -160,49 +130,6 @@
 .config-msg--success { background: rgba(34,197,94,0.12); border: 1px solid #22c55e; color: #22c55e; }
 .config-msg--error   { background: rgba(227,6,19,0.12);  border: 1px solid #E30613; color: #ff6b6b; }
 
-.fundo-preview-wrap {
-  position: relative;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 1px solid #2a2a2a;
-  width: 100%;
-  max-height: 200px;
-}
-.fundo-preview-img {
-  width: 100%;
-  max-height: 200px;
-  object-fit: cover;
-  display: block;
-}
-.fundo-badge {
-  position: absolute;
-  top: 10px; right: 10px;
-  padding: 3px 10px;
-  border-radius: 20px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  background: rgba(255,255,255,0.12);
-  color: #aaa;
-}
-.fundo-badge--custom  { background: rgba(34,197,94,0.85);  color: #fff; }
-.fundo-badge--default { background: rgba(255,255,255,0.12); color: #aaa; }
-
-.drop-zone {
-  border: 2px dashed #2a2a2a;
-  border-radius: 8px;
-  transition: border-color .2s, background .2s;
-  cursor: pointer;
-}
-.drop-zone.dragover { border-color: #E30613; background: rgba(227,6,19,0.06); }
-.drop-zone-inner {
-  padding: 28px 20px;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-.drop-zone-inner p    { color: #aaa; margin: 0 0 4px; font-size: .9rem; }
-.drop-zone-inner small { color: #555; font-size: .78rem; }
 
 .status-bar {
   display: flex;
@@ -259,27 +186,25 @@ small code { background:#1a1a1a; padding:1px 5px; border-radius:4px; color:#ccc;
 if (!localStorage.getItem('totem_station_id')) {
   localStorage.setItem('totem_station_id', crypto.randomUUID());
 }
-const STATION_ID = localStorage.getItem('totem_station_id');
+const STATION_ID    = localStorage.getItem('totem_station_id');
 const STATION_SHORT = STATION_ID.substring(0, 8);
 
-// Atualiza UI com station_id
-document.getElementById('station-id-field').value  = STATION_ID;
-document.getElementById('station-id-event').value  = STATION_ID;
+document.getElementById('station-id-event').value   = STATION_ID;
 document.getElementById('station-chip').textContent = 'Estação ' + STATION_SHORT;
 
-// Mapa de eventos disponíveis (injetado pelo servidor)
+// ── Mapa de eventos (injetado pelo servidor) ──────────────────────────────────
 const EVENTOS = {
   {% for ev in eventos %}
   '{{ ev.id }}': {
-    name: {{ ev.name | tojson }},
-    qr_url: {{ ev.qr_url | tojson }},
-    qr_label: {{ ev.qr_label | tojson }},
+    name:      {{ ev.name      | tojson }},
+    qr_url:    {{ ev.qr_url    | tojson }},
+    qr_label:  {{ ev.qr_label  | tojson }},
     lgpd_mode: {{ ev.lgpd_mode | tojson }},
   },
   {% endfor %}
 };
 
-// Carrega configurações da estação e preenche o formulário
+// ── Carrega config da estação ─────────────────────────────────────────────────
 fetch('/station_info?station=' + STATION_ID)
   .then(r => r.json())
   .then(cfg => {
@@ -288,11 +213,11 @@ fetch('/station_info?station=' + STATION_ID)
     document.getElementById('event_name').value        = cfg.event_name       || '';
     document.getElementById('overlay_qr_url').value   = cfg.overlay_qr_url  || '';
     document.getElementById('overlay_qr_label').value = cfg.overlay_qr_label || '';
-    const radios = document.querySelectorAll('input[name="lgpd_mode"]');
-    radios.forEach(r => { r.checked = (r.value === (cfg.lgpd_mode || 'personal')); });
+    document.querySelectorAll('input[name="lgpd_mode"]')
+      .forEach(r => { r.checked = (r.value === (cfg.lgpd_mode || 'personal')); });
   }).catch(() => {});
 
-// Preenche campos com os padrões do evento selecionado
+// ── Preenche campos ao selecionar evento ─────────────────────────────────────
 function preencherDoEvento(event_id) {
   if (!event_id || !EVENTOS[event_id]) return;
   const ev = EVENTOS[event_id];
@@ -303,26 +228,8 @@ function preencherDoEvento(event_id) {
     .forEach(r => { r.checked = (r.value === ev.lgpd_mode); });
 }
 
-// Carrega preview do fundo desta estação
-const previewImg = document.getElementById('fundo-preview');
-previewImg.src = '/fundo_preview?station=' + STATION_ID + '&t=' + Date.now();
-previewImg.onload = function() {
-  const badge = document.getElementById('fundo-badge');
-  // Se o servidor retornou o fundo padrão, a URL não tem cache local = padrão
-  // O servidor sempre responde 200, então verificamos via cookie de resposta não é trivial.
-  // Deixamos o badge ser atualizado via upload.
-  if (badge.textContent === 'Carregando...') {
-    badge.textContent = 'Padrão';
-    badge.className   = 'fundo-badge fundo-badge--default';
-  }
-};
-
-// ── Drag & drop ───────────────────────────────────────────────────────────────
-const dropZone  = document.getElementById('drop-zone');
-const fileInput = document.getElementById('fundo-input');
-const dropLabel = document.getElementById('drop-label');
-const btnUpload = document.getElementById('btn-upload');
-const pageMsg   = document.getElementById('page-msg');
+// ── Salvar configurações ──────────────────────────────────────────────────────
+const pageMsg = document.getElementById('page-msg');
 
 function showMsg(text, type) {
   pageMsg.textContent   = text;
@@ -331,62 +238,6 @@ function showMsg(text, type) {
   pageMsg.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
-dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
-dropZone.addEventListener('drop', e => {
-  e.preventDefault();
-  dropZone.classList.remove('dragover');
-  const file = e.dataTransfer.files[0];
-  if (file) setFile(file);
-});
-fileInput.addEventListener('change', () => { if (fileInput.files[0]) setFile(fileInput.files[0]); });
-
-function setFile(file) {
-  const dt = new DataTransfer();
-  dt.items.add(file);
-  fileInput.files    = dt.files;
-  dropLabel.textContent     = file.name;
-  dropZone.style.borderColor = '#E30613';
-  btnUpload.disabled         = false;
-}
-
-// ── Upload ────────────────────────────────────────────────────────────────────
-document.getElementById('fundo-form').addEventListener('submit', async function(e) {
-  e.preventDefault();
-  if (!fileInput.files[0]) return;
-
-  btnUpload.disabled    = true;
-  btnUpload.textContent = 'Enviando...';
-
-  const formData = new FormData();
-  formData.append('fundo', fileInput.files[0]);
-  formData.append('station_id', STATION_ID);
-
-  try {
-    const res  = await fetch('/upload_fundo', { method: 'POST', body: formData });
-    const data = await res.json();
-
-    if (data.success) {
-      previewImg.src = '/fundo_preview?station=' + STATION_ID + '&t=' + Date.now();
-      const badge = document.getElementById('fundo-badge');
-      badge.textContent = 'Personalizado';
-      badge.className   = 'fundo-badge fundo-badge--custom';
-      dropLabel.textContent      = 'Clique ou arraste a imagem aqui';
-      dropZone.style.borderColor = '';
-      fileInput.value = '';
-      showMsg('Fundo atualizado! As próximas fotos desta estação já usam o novo fundo.', 'success');
-    } else {
-      showMsg('Erro: ' + data.error, 'error');
-    }
-  } catch (err) {
-    showMsg('Erro de conexão. Tente novamente.', 'error');
-  } finally {
-    btnUpload.disabled    = false;
-    btnUpload.textContent = 'Enviar novo fundo';
-  }
-});
-
-// ── Salvar configurações do evento ────────────────────────────────────────────
 document.getElementById('event-form').addEventListener('submit', async function(e) {
   e.preventDefault();
   const btn = document.getElementById('btn-event-save');
@@ -397,7 +248,7 @@ document.getElementById('event-form').addEventListener('submit', async function(
   try {
     const res  = await fetch('/config_estacao', { method: 'POST', body: formData });
     const data = await res.json();
-    if (data.success) showMsg('Configurações do evento salvas!', 'success');
+    if (data.success) showMsg('Configurações salvas!', 'success');
     else              showMsg('Erro ao salvar.', 'error');
   } catch {
     showMsg('Erro de conexão.', 'error');

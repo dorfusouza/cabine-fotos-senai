@@ -207,13 +207,9 @@ def update_station_config(station_id: str, **kwargs):
         cfg = _station_config.setdefault(station_id, dict(_STATION_DEFAULTS))
         cfg.update(kwargs)
 
-# ── Fundos por estação ────────────────────────────────────────────────────────
-_station_backgrounds: dict[str, str] = {}
-_sbg_lock = threading.Lock()
-
-
-def _station_cache_path(station_id: str) -> str:
-    return os.path.join(FUNDO_CACHE_DIR, f'fundo_{station_id[:8]}.png')
+# ── Fundos por evento ─────────────────────────────────────────────────────────
+_event_fundo_cache: dict[str, str] = {}
+_efundo_lock = threading.Lock()
 
 
 def _event_fundo_cache_path(event_id: str) -> str:
@@ -221,68 +217,33 @@ def _event_fundo_cache_path(event_id: str) -> str:
 
 
 def get_station_fundo(station_id: str) -> str:
-    """Retorna o fundo: estação → evento → padrão."""
-    with _sbg_lock:
-        if station_id in _station_backgrounds:
-            return _station_backgrounds[station_id]
-
-    # 1) fundo específico da estação
-    cache_path = _station_cache_path(station_id)
-    if os.path.exists(cache_path):
-        with _sbg_lock:
-            _station_backgrounds[station_id] = cache_path
-        return cache_path
-
-    if CLOUDINARY_CONFIGURED:
-        try:
-            resource = cloudinary.api.resource(f'cabinefotos/fundo_{station_id[:8]}')
-            urllib.request.urlretrieve(resource['secure_url'], cache_path)
-            with _sbg_lock:
-                _station_backgrounds[station_id] = cache_path
-            return cache_path
-        except Exception:
-            pass
-
-    # 2) fundo do evento vinculado à estação
+    """Retorna o fundo do evento vinculado à estação, ou o padrão."""
     cfg      = get_station_config(station_id)
     event_id = cfg.get('event_id', '')
     if event_id:
-        ev = event_store.load(event_id)
-        if ev and ev.background_id:
-            ev_cache = _event_fundo_cache_path(event_id)
-            if os.path.exists(ev_cache):
-                return ev_cache
-            if CLOUDINARY_CONFIGURED:
+        with _efundo_lock:
+            if event_id in _event_fundo_cache:
+                return _event_fundo_cache[event_id]
+
+        ev_cache = _event_fundo_cache_path(event_id)
+        if os.path.exists(ev_cache):
+            with _efundo_lock:
+                _event_fundo_cache[event_id] = ev_cache
+            return ev_cache
+
+        if CLOUDINARY_CONFIGURED:
+            ev = event_store.load(event_id)
+            if ev and ev.background_id:
                 try:
                     resource = cloudinary.api.resource(ev.background_id)
                     urllib.request.urlretrieve(resource['secure_url'], ev_cache)
+                    with _efundo_lock:
+                        _event_fundo_cache[event_id] = ev_cache
                     return ev_cache
                 except Exception:
                     pass
 
     return FUNDO_DEFAULT
-
-
-def set_station_fundo(station_id: str, source_path: str) -> str:
-    """Salva o fundo da estação localmente e sobe para o Cloudinary."""
-    cache_path = _station_cache_path(station_id)
-    shutil.copy(source_path, cache_path)
-    with _sbg_lock:
-        _station_backgrounds[station_id] = cache_path
-
-    if CLOUDINARY_CONFIGURED:
-        try:
-            public_id = f'cabinefotos/fundo_{station_id[:8]}'
-            cloudinary.uploader.upload(
-                cache_path,
-                public_id=public_id,
-                overwrite=True,
-                resource_type='image',
-            )
-        except Exception as e:
-            print(f" * Cloudinary fundo upload error: {e}")
-
-    return cache_path
 
 
 # ── Estado por sessão ─────────────────────────────────────────────────────────
@@ -482,36 +443,6 @@ def config_estacao():
     return jsonify(success=True)
 
 
-@app.route('/upload_fundo', methods=['POST'])
-def upload_fundo():
-    station_id = request.form.get('station_id', 'default')
-
-    if 'fundo' not in request.files:
-        return jsonify(success=False, error='Nenhum arquivo enviado'), 400
-
-    file = request.files['fundo']
-    ext  = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
-    if not ext or ext not in ALLOWED_EXT:
-        return jsonify(success=False, error='Formato inválido. Use PNG ou JPG.'), 400
-
-    tmp = os.path.join(FUNDO_CACHE_DIR, f'tmp_{uuid.uuid4()}.{ext}')
-    try:
-        file.save(tmp)
-        if cv2.imread(tmp) is None:
-            return jsonify(success=False, error='Arquivo inválido ou corrompido.'), 400
-        set_station_fundo(station_id, tmp)
-    finally:
-        if os.path.exists(tmp):
-            os.remove(tmp)
-
-    return jsonify(success=True)
-
-
-@app.route('/fundo_preview')
-def fundo_preview():
-    station_id = request.args.get('station', 'default')
-    path = get_station_fundo(station_id)
-    return send_file(path, mimetype='image/png')
 
 
 @app.route('/upload_foto', methods=['POST'])
