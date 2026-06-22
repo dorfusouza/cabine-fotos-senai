@@ -260,6 +260,17 @@ def aplicar_qr_overlay(moldura: np.ndarray, url: str, label: str,
     return moldura
 
 
+# ── Admin auth ────────────────────────────────────────────────────────────────
+def require_admin(f):
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        # Se ADMIN_PASSWORD não está definido, libera sem login (setup inicial)
+        if ADMIN_PASSWORD and not session.get('admin'):
+            return redirect(f'/admin/login?next={request.path}')
+        return f(*args, **kwargs)
+    return wrapper
+
+
 # ── Rotas ─────────────────────────────────────────────────────────────────────
 
 @app.route('/')
@@ -269,6 +280,7 @@ def index():
 
 
 @app.route('/configuracao', methods=['GET', 'POST'])
+@require_admin
 def configuracao():
     global APP_URL
     msg = None
@@ -506,28 +518,22 @@ def esperadetect():
     return 'ok'
 
 
-# ── Admin ─────────────────────────────────────────────────────────────────────
-def require_admin(f):
-    @functools.wraps(f)
-    def wrapper(*args, **kwargs):
-        if not session.get('admin'):
-            return redirect('/admin/login')
-        return f(*args, **kwargs)
-    return wrapper
-
+# ── Admin rotas ───────────────────────────────────────────────────────────────
 
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
-    error = None
+    next_url = request.args.get('next', '/configuracao')
+    error    = None
     if request.method == 'POST':
+        next_url = request.form.get('next', '/configuracao')
         if not ADMIN_PASSWORD:
             error = 'Senha de admin não configurada (defina a variável ADMIN_PASSWORD).'
         elif request.form.get('password') == ADMIN_PASSWORD:
             session['admin'] = True
-            return redirect('/admin')
+            return redirect(next_url)
         else:
             error = 'Senha incorreta.'
-    return render_template('admin_login.html', error=error)
+    return render_template('admin_login.html', error=error, next_url=next_url)
 
 
 @app.route('/admin/logout')

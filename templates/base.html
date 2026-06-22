@@ -23,6 +23,10 @@
     <nav>
       <a href="/index" class="{% block nav_inicio %}{% endblock %}">Início</a>
       <a href="/configuracao" class="{% block nav_config %}{% endblock %}">Configurações</a>
+      {% if session.get('admin') %}
+      <a href="/admin">Galeria</a>
+      <a href="/admin/logout" style="opacity:.7;">Sair</a>
+      {% endif %}
     </nav>
   </header>
 

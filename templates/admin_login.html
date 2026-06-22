@@ -77,6 +77,7 @@
     {% endif %}
 
     <form method="post">
+      <input type="hidden" name="next" value="{{ next_url }}">
       <label for="password">Senha de administrador</label>
       <input type="password" id="password" name="password" autofocus autocomplete="current-password">
       <button type="submit">Entrar</button>
