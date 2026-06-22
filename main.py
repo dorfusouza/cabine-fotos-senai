@@ -91,13 +91,19 @@ class EventStore:
     def _local_path(self, event_id: str) -> str:
         return os.path.join(DATA_DIR, f'{event_id}.json')
 
+    @staticmethod
+    def _strip_ext(eid: str) -> str:
+        """Remove extensão .json que o Cloudinary raw pode acrescentar ao public_id."""
+        return eid[:-5] if eid.endswith('.json') else eid
+
     def save(self, event: Event):
         os.makedirs(DATA_DIR, exist_ok=True)
         data = json.dumps(event.to_dict(), ensure_ascii=False, indent=2)
         with open(self._local_path(event.id), 'w', encoding='utf-8') as f:
             f.write(data)
         if CLOUDINARY_CONFIGURED:
-            tmp = self._local_path(f'_tmp_{event.id}')
+            # Tmp SEM extensão: evita que Cloudinary raw inclua ".json" no public_id
+            tmp = os.path.join(DATA_DIR, f'_tmp_{event.id}')
             try:
                 with open(tmp, 'w', encoding='utf-8') as f:
                     f.write(data)
@@ -115,6 +121,7 @@ class EventStore:
             self._cache[event.id] = event
 
     def load(self, event_id: str) -> Event | None:
+        event_id = self._strip_ext(event_id)
         with self._lock:
             if event_id in self._cache:
                 return self._cache[event_id]
@@ -126,32 +133,35 @@ class EventStore:
                 self._cache[ev.id] = ev
             return ev
         if CLOUDINARY_CONFIGURED:
-            try:
-                res  = cloudinary.api.resource(
-                    f'{self._CLOUD_PREFIX}{event_id}', resource_type='raw')
-                raw  = urllib.request.urlopen(res['secure_url']).read()
-                ev   = Event.from_dict(json.loads(raw))
-                with open(path, 'w', encoding='utf-8') as f:
-                    f.write(raw.decode())
-                with self._lock:
-                    self._cache[ev.id] = ev
-                return ev
-            except Exception:
-                pass
+            # Tenta com e sem extensão (compatibilidade com uploads antigos)
+            for public_id in (f'{self._CLOUD_PREFIX}{event_id}',
+                              f'{self._CLOUD_PREFIX}{event_id}.json'):
+                try:
+                    res = cloudinary.api.resource(public_id, resource_type='raw')
+                    raw = urllib.request.urlopen(res['secure_url']).read()
+                    ev  = Event.from_dict(json.loads(raw))
+                    with open(self._local_path(ev.id), 'w', encoding='utf-8') as f:
+                        f.write(raw.decode())
+                    with self._lock:
+                        self._cache[ev.id] = ev
+                    return ev
+                except Exception:
+                    continue
         return None
 
     def list_all(self) -> list[Event]:
-        seen: dict[str, Event] = {}
+        seen: dict[str, Event] = {}  # keyed by ev.id real
         with self._lock:
             seen.update(self._cache)
         if os.path.exists(DATA_DIR):
             for fname in os.listdir(DATA_DIR):
-                if fname.endswith('.json') and not fname.startswith('_tmp_'):
-                    eid = fname[:-5]
-                    if eid not in seen:
-                        ev = self.load(eid)
-                        if ev:
-                            seen[eid] = ev
+                if not fname.endswith('.json') or fname.startswith('_tmp_'):
+                    continue
+                eid = self._strip_ext(fname[:-5])  # remove dupla extensão se houver
+                if eid not in seen:
+                    ev = self.load(eid)
+                    if ev and ev.id not in seen:
+                        seen[ev.id] = ev
         if CLOUDINARY_CONFIGURED and not seen:
             try:
                 result = cloudinary.api.resources(
@@ -159,11 +169,11 @@ class EventStore:
                     prefix=self._CLOUD_PREFIX, max_results=200,
                 )
                 for r in result.get('resources', []):
-                    eid = r['public_id'].split('/')[-1]
+                    eid = self._strip_ext(r['public_id'].split('/')[-1])
                     if eid not in seen:
                         ev = self.load(eid)
-                        if ev:
-                            seen[eid] = ev
+                        if ev and ev.id not in seen:
+                            seen[ev.id] = ev
             except Exception as e:
                 print(f' * EventStore list: {e}')
         return sorted(seen.values(), key=lambda e: e.created_at, reverse=True)
@@ -756,6 +766,16 @@ def admin_evento_arquivar(event_id):
     ev = event_store.load(event_id)
     if ev:
         ev.active = False
+        event_store.save(ev)
+    return redirect('/admin/eventos')
+
+
+@app.route('/admin/eventos/<event_id>/reativar', methods=['POST'])
+@require_admin
+def admin_evento_reativar(event_id):
+    ev = event_store.load(event_id)
+    if ev:
+        ev.active = True
         event_store.save(ev)
     return redirect('/admin/eventos')
 

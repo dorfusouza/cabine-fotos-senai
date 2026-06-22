@@ -217,6 +217,10 @@
             <button type="submit" class="btn btn-muted" style="font-size:.8rem; padding:6px 12px;"
                     onclick="return confirm('Arquivar {{ ev.name }}?')">Arquivar</button>
           </form>
+          {% else %}
+          <form method="post" action="/admin/eventos/{{ ev.id }}/reativar" style="margin:0;">
+            <button type="submit" class="btn btn-ghost" style="font-size:.8rem; padding:6px 12px;">Reativar</button>
+          </form>
           {% endif %}
         </div>
       </div>
