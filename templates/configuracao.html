@@ -53,6 +53,17 @@
       <input type="hidden" id="station-id-event" name="station_id" value="default">
 
       <div class="mb-4">
+        <label for="event_id">Evento ativo nesta estação</label>
+        <select id="event_id" name="event_id" onchange="preencherDoEvento(this.value)">
+          <option value="">— Sem evento vinculado —</option>
+          {% for ev in eventos %}
+          <option value="{{ ev.id }}">{{ ev.name }}</option>
+          {% endfor %}
+        </select>
+        <small>Selecionar um evento preenche os campos abaixo com os padrões do evento.</small>
+      </div>
+
+      <div class="mb-4">
         <label for="event_name">Nome do evento</label>
         <input type="text" id="event_name" name="event_name"
                placeholder="Ex: Festa Junina SESI 2026">
@@ -256,16 +267,41 @@ document.getElementById('station-id-field').value  = STATION_ID;
 document.getElementById('station-id-event').value  = STATION_ID;
 document.getElementById('station-chip').textContent = 'Estação ' + STATION_SHORT;
 
-// Carrega configurações do evento desta estação
+// Mapa de eventos disponíveis (injetado pelo servidor)
+const EVENTOS = {
+  {% for ev in eventos %}
+  '{{ ev.id }}': {
+    name: {{ ev.name | tojson }},
+    qr_url: {{ ev.qr_url | tojson }},
+    qr_label: {{ ev.qr_label | tojson }},
+    lgpd_mode: {{ ev.lgpd_mode | tojson }},
+  },
+  {% endfor %}
+};
+
+// Carrega configurações da estação e preenche o formulário
 fetch('/station_info?station=' + STATION_ID)
   .then(r => r.json())
   .then(cfg => {
+    const sel = document.getElementById('event_id');
+    if (cfg.event_id && sel) sel.value = cfg.event_id;
     document.getElementById('event_name').value        = cfg.event_name       || '';
     document.getElementById('overlay_qr_url').value   = cfg.overlay_qr_url  || '';
     document.getElementById('overlay_qr_label').value = cfg.overlay_qr_label || '';
     const radios = document.querySelectorAll('input[name="lgpd_mode"]');
     radios.forEach(r => { r.checked = (r.value === (cfg.lgpd_mode || 'personal')); });
   }).catch(() => {});
+
+// Preenche campos com os padrões do evento selecionado
+function preencherDoEvento(event_id) {
+  if (!event_id || !EVENTOS[event_id]) return;
+  const ev = EVENTOS[event_id];
+  document.getElementById('event_name').value        = ev.name;
+  document.getElementById('overlay_qr_url').value   = ev.qr_url;
+  document.getElementById('overlay_qr_label').value = ev.qr_label;
+  document.querySelectorAll('input[name="lgpd_mode"]')
+    .forEach(r => { r.checked = (r.value === ev.lgpd_mode); });
+}
 
 // Carrega preview do fundo desta estação
 const previewImg = document.getElementById('fundo-preview');

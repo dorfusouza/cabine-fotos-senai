@@ -1,12 +1,15 @@
 import os
 import uuid
+import json
 import base64
 import shutil
 import threading
 import zipfile
 import functools
+import datetime
 import urllib.parse
 import urllib.request
+from dataclasses import dataclass, asdict, field as dc_field
 
 import cv2
 import numpy as np
@@ -21,12 +24,14 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-PHOTOS_DIR     = os.path.join(app.root_path, 'static', 'photos')
-FUNDO_DEFAULT  = os.path.join(app.root_path, 'static', 'images', 'mundosenai.png')
+PHOTOS_DIR      = os.path.join(app.root_path, 'static', 'photos')
+FUNDO_DEFAULT   = os.path.join(app.root_path, 'static', 'images', 'mundosenai.png')
 FUNDO_CACHE_DIR = os.path.join(app.root_path, 'static', 'fundos')
-ALLOWED_EXT    = {'png', 'jpg', 'jpeg'}
-os.makedirs(PHOTOS_DIR,     exist_ok=True)
+DATA_DIR        = os.path.join(app.root_path, 'data', 'events')
+ALLOWED_EXT     = {'png', 'jpg', 'jpeg'}
+os.makedirs(PHOTOS_DIR,      exist_ok=True)
 os.makedirs(FUNDO_CACHE_DIR, exist_ok=True)
+os.makedirs(DATA_DIR,        exist_ok=True)
 
 # ── Configuração via variáveis de ambiente ────────────────────────────────────
 APP_URL        = os.environ.get('APP_URL', 'http://localhost:2205/')
@@ -44,6 +49,135 @@ if CLOUDINARY_CONFIGURED:
 else:
     print(" * Cloudinary NÃO configurado — usando armazenamento local")
 
+def _cloudinary_img_url(public_id: str, **kwargs) -> str:
+    if not CLOUDINARY_CONFIGURED or not public_id:
+        return ''
+    try:
+        return cloudinary.CloudinaryImage(public_id).build_url(**kwargs)
+    except Exception:
+        return ''
+
+app.jinja_env.globals['cloudinary_img_url'] = _cloudinary_img_url
+
+# ── Modelo de Evento ──────────────────────────────────────────────────────────
+@dataclass
+class Event:
+    id:           str
+    name:         str
+    created_at:   str
+    background_id: str = ''   # Cloudinary public_id ou nome de arquivo local
+    qr_url:       str = ''
+    qr_label:     str = ''
+    lgpd_mode:    str = 'personal'
+    active:       bool = True
+    photo_count:  int  = 0
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> 'Event':
+        known = cls.__dataclass_fields__
+        return cls(**{k: v for k, v in d.items() if k in known})
+
+
+class EventStore:
+    _CLOUD_PREFIX = 'cabinefotos/meta/events/'
+
+    def __init__(self):
+        self._cache: dict[str, Event] = {}
+        self._lock  = threading.Lock()
+
+    def _local_path(self, event_id: str) -> str:
+        return os.path.join(DATA_DIR, f'{event_id}.json')
+
+    def save(self, event: Event):
+        os.makedirs(DATA_DIR, exist_ok=True)
+        data = json.dumps(event.to_dict(), ensure_ascii=False, indent=2)
+        with open(self._local_path(event.id), 'w', encoding='utf-8') as f:
+            f.write(data)
+        if CLOUDINARY_CONFIGURED:
+            tmp = self._local_path(f'_tmp_{event.id}')
+            try:
+                with open(tmp, 'w', encoding='utf-8') as f:
+                    f.write(data)
+                cloudinary.uploader.upload(
+                    tmp,
+                    public_id=f'{self._CLOUD_PREFIX}{event.id}',
+                    resource_type='raw', overwrite=True,
+                )
+            except Exception as e:
+                print(f' * EventStore save: {e}')
+            finally:
+                if os.path.exists(tmp):
+                    os.unlink(tmp)
+        with self._lock:
+            self._cache[event.id] = event
+
+    def load(self, event_id: str) -> Event | None:
+        with self._lock:
+            if event_id in self._cache:
+                return self._cache[event_id]
+        path = self._local_path(event_id)
+        if os.path.exists(path):
+            with open(path, encoding='utf-8') as f:
+                ev = Event.from_dict(json.load(f))
+            with self._lock:
+                self._cache[ev.id] = ev
+            return ev
+        if CLOUDINARY_CONFIGURED:
+            try:
+                res  = cloudinary.api.resource(
+                    f'{self._CLOUD_PREFIX}{event_id}', resource_type='raw')
+                raw  = urllib.request.urlopen(res['secure_url']).read()
+                ev   = Event.from_dict(json.loads(raw))
+                with open(path, 'w', encoding='utf-8') as f:
+                    f.write(raw.decode())
+                with self._lock:
+                    self._cache[ev.id] = ev
+                return ev
+            except Exception:
+                pass
+        return None
+
+    def list_all(self) -> list[Event]:
+        seen: dict[str, Event] = {}
+        with self._lock:
+            seen.update(self._cache)
+        if os.path.exists(DATA_DIR):
+            for fname in os.listdir(DATA_DIR):
+                if fname.endswith('.json') and not fname.startswith('_tmp_'):
+                    eid = fname[:-5]
+                    if eid not in seen:
+                        ev = self.load(eid)
+                        if ev:
+                            seen[eid] = ev
+        if CLOUDINARY_CONFIGURED and not seen:
+            try:
+                result = cloudinary.api.resources(
+                    resource_type='raw', type='upload',
+                    prefix=self._CLOUD_PREFIX, max_results=200,
+                )
+                for r in result.get('resources', []):
+                    eid = r['public_id'].split('/')[-1]
+                    if eid not in seen:
+                        ev = self.load(eid)
+                        if ev:
+                            seen[eid] = ev
+            except Exception as e:
+                print(f' * EventStore list: {e}')
+        return sorted(seen.values(), key=lambda e: e.created_at, reverse=True)
+
+    def increment_photos(self, event_id: str):
+        ev = self.load(event_id)
+        if ev:
+            ev.photo_count += 1
+            self.save(ev)
+
+
+event_store = EventStore()
+
+
 # ── Referência de composição (calibrada para mundosenai.png 1080×1920) ────────
 _REF_W,      _REF_H      = 1080, 1920
 _REF_X,      _REF_Y_BASE =   74,  220
@@ -54,25 +188,23 @@ _REF_BORDA               =   10
 _station_config: dict[str, dict] = {}
 _cfg_lock = threading.Lock()
 
+_STATION_DEFAULTS = {
+    'event_id':        '',
+    'event_name':      'SENAI — Totem de Fotos',
+    'overlay_qr_url':  '',
+    'overlay_qr_label': '',
+    'lgpd_mode':       'personal',
+}
+
 def get_station_config(station_id: str) -> dict:
     with _cfg_lock:
         if station_id not in _station_config:
-            _station_config[station_id] = {
-                'event_name': 'SENAI — Totem de Fotos',
-                'overlay_qr_url': '',
-                'overlay_qr_label': '',
-                'lgpd_mode': 'personal',   # 'personal' | 'promotional'
-            }
+            _station_config[station_id] = dict(_STATION_DEFAULTS)
         return dict(_station_config[station_id])
 
 def update_station_config(station_id: str, **kwargs):
     with _cfg_lock:
-        cfg = _station_config.setdefault(station_id, {
-            'event_name': 'SENAI — Totem de Fotos',
-            'overlay_qr_url': '',
-            'overlay_qr_label': '',
-            'lgpd_mode': 'personal',
-        })
+        cfg = _station_config.setdefault(station_id, dict(_STATION_DEFAULTS))
         cfg.update(kwargs)
 
 # ── Fundos por estação ────────────────────────────────────────────────────────
@@ -84,13 +216,17 @@ def _station_cache_path(station_id: str) -> str:
     return os.path.join(FUNDO_CACHE_DIR, f'fundo_{station_id[:8]}.png')
 
 
+def _event_fundo_cache_path(event_id: str) -> str:
+    return os.path.join(FUNDO_CACHE_DIR, f'event_{event_id[:8]}.png')
+
+
 def get_station_fundo(station_id: str) -> str:
-    """Retorna o caminho do fundo desta estação.
-    Busca em: memória → disco → Cloudinary → padrão."""
+    """Retorna o fundo: estação → evento → padrão."""
     with _sbg_lock:
         if station_id in _station_backgrounds:
             return _station_backgrounds[station_id]
 
+    # 1) fundo específico da estação
     cache_path = _station_cache_path(station_id)
     if os.path.exists(cache_path):
         with _sbg_lock:
@@ -99,15 +235,30 @@ def get_station_fundo(station_id: str) -> str:
 
     if CLOUDINARY_CONFIGURED:
         try:
-            public_id = f'cabinefotos/fundo_{station_id[:8]}'
-            resource  = cloudinary.api.resource(public_id)
+            resource = cloudinary.api.resource(f'cabinefotos/fundo_{station_id[:8]}')
             urllib.request.urlretrieve(resource['secure_url'], cache_path)
             with _sbg_lock:
                 _station_backgrounds[station_id] = cache_path
-            print(f" * Fundo estação {station_id[:8]} carregado do Cloudinary")
             return cache_path
         except Exception:
             pass
+
+    # 2) fundo do evento vinculado à estação
+    cfg      = get_station_config(station_id)
+    event_id = cfg.get('event_id', '')
+    if event_id:
+        ev = event_store.load(event_id)
+        if ev and ev.background_id:
+            ev_cache = _event_fundo_cache_path(event_id)
+            if os.path.exists(ev_cache):
+                return ev_cache
+            if CLOUDINARY_CONFIGURED:
+                try:
+                    resource = cloudinary.api.resource(ev.background_id)
+                    urllib.request.urlretrieve(resource['secure_url'], ev_cache)
+                    return ev_cache
+                except Exception:
+                    pass
 
     return FUNDO_DEFAULT
 
@@ -157,11 +308,13 @@ def get_session(sid: str) -> dict:
 _photo_registry: dict[str, dict] = {}
 _reg_lock = threading.Lock()
 
-def registrar_foto(photo_id: str, cloudinary_url: str | None, station_id: str, event_name: str):
+def registrar_foto(photo_id: str, cloudinary_url: str | None,
+                   station_id: str, event_id: str, event_name: str):
     with _reg_lock:
         _photo_registry[photo_id] = {
             'cloudinary_url': cloudinary_url,
             'station_id':     station_id,
+            'event_id':       event_id,
             'event_name':     event_name,
         }
 
@@ -170,28 +323,36 @@ def get_foto_info(photo_id: str) -> dict | None:
         return _photo_registry.get(photo_id)
 
 def get_foto_cloudinary_url(photo_id: str) -> str | None:
-    """Constrói URL Cloudinary a partir do photo_id quando o registro em memória expirou."""
     if not CLOUDINARY_CONFIGURED:
         return None
     info = get_foto_info(photo_id)
     if info and info.get('cloudinary_url'):
         return info['cloudinary_url']
-    # Tenta buscar direto no Cloudinary com public_id previsível
-    try:
-        resource = cloudinary.api.resource(f'cabinefotos/fotos/{photo_id}')
-        return resource['secure_url']
-    except Exception:
-        return None
+    # Tenta com event_id (novo path) e depois legado
+    event_id = (info or {}).get('event_id', '')
+    candidates = []
+    if event_id:
+        candidates.append(f'cabinefotos/events/{event_id}/fotos/{photo_id}')
+    candidates.append(f'cabinefotos/fotos/{photo_id}')
+    for pid in candidates:
+        try:
+            return cloudinary.api.resource(pid)['secure_url']
+        except Exception:
+            pass
+    return None
 
 
 # ── Cloudinary upload de fotos ────────────────────────────────────────────────
-def upload_foto_cloudinary(filepath: str, photo_id: str, event_name: str = '') -> str | None:
+def upload_foto_cloudinary(filepath: str, photo_id: str,
+                           event_id: str = '', event_name: str = '') -> str | None:
     if not CLOUDINARY_CONFIGURED:
         return None
+    public_id = (f'cabinefotos/events/{event_id}/fotos/{photo_id}'
+                 if event_id else f'cabinefotos/fotos/{photo_id}')
     try:
         result = cloudinary.uploader.upload(
             filepath,
-            public_id=f'cabinefotos/fotos/{photo_id}',
+            public_id=public_id,
             overwrite=False,
             resource_type='image',
             context=f'event_name={event_name}',
@@ -295,6 +456,7 @@ def configuracao():
         app_url=APP_URL,
         cloudinary_ok=CLOUDINARY_CONFIGURED,
         cloudinary_cloud=os.environ.get('CLOUDINARY_CLOUD_NAME', '—'),
+        eventos=[e for e in event_store.list_all() if e.active],
         msg=msg,
     )
 
@@ -308,8 +470,10 @@ def station_info():
 @app.route('/config_estacao', methods=['POST'])
 def config_estacao():
     station_id = request.form.get('station_id', 'default')
+    event_id = request.form.get('event_id', '').strip()
     update_station_config(
         station_id,
+        event_id=event_id,
         event_name=request.form.get('event_name', '').strip() or 'SENAI — Totem de Fotos',
         overlay_qr_url=request.form.get('overlay_qr_url', '').strip(),
         overlay_qr_label=request.form.get('overlay_qr_label', '').strip(),
@@ -410,19 +574,28 @@ def upload_foto():
             moldura[y : y + h, x : x + w] = foto
             y += h + max(10, int(15 * sy))
 
-        # QR overlay no canto inferior direito (fora da área das fotos)
-        cfg         = get_station_config(station_id)
+        # QR overlay no canto inferior direito
+        cfg           = get_station_config(station_id)
+        event_id      = cfg.get('event_id', '')
         overlay_url   = cfg.get('overlay_qr_url', '')
         overlay_label = cfg.get('overlay_qr_label', '')
         if overlay_url:
             moldura = aplicar_qr_overlay(moldura, overlay_url, overlay_label, bg_w, bg_h)
 
-        comp_path  = os.path.join(PHOTOS_DIR, nome_comp)
+        # Salva composite em subpasta do evento (ou raiz se sem evento)
+        if event_id:
+            event_dir = os.path.join(PHOTOS_DIR, event_id)
+            os.makedirs(event_dir, exist_ok=True)
+            comp_path = os.path.join(event_dir, nome_comp)
+        else:
+            comp_path = os.path.join(PHOTOS_DIR, nome_comp)
         cv2.imwrite(comp_path, moldura)
 
         event_name = cfg.get('event_name', 'SENAI — Totem de Fotos')
-        cloud_url  = upload_foto_cloudinary(comp_path, photo_id, event_name)
-        registrar_foto(photo_id, cloud_url, station_id, event_name)
+        cloud_url  = upload_foto_cloudinary(comp_path, photo_id, event_id, event_name)
+        registrar_foto(photo_id, cloud_url, station_id, event_id, event_name)
+        if event_id:
+            event_store.increment_photos(event_id)
 
         sess['nome_foto']      = nome_comp
         sess['photo_id']       = photo_id
@@ -544,60 +717,134 @@ def admin_logout():
 
 @app.route('/admin')
 @require_admin
-def admin_galeria():
-    photos = []
+def admin_hub():
+    return redirect('/admin/eventos')
 
+
+@app.route('/admin/eventos')
+@require_admin
+def admin_eventos():
+    eventos = event_store.list_all()
+    return render_template('admin_eventos.html',
+                           eventos=eventos,
+                           cloudinary_ok=CLOUDINARY_CONFIGURED)
+
+
+@app.route('/admin/eventos/novo', methods=['POST'])
+@require_admin
+def admin_evento_novo():
+    name = request.form.get('name', '').strip()
+    if not name:
+        return redirect('/admin/eventos')
+
+    ev = Event(
+        id=uuid.uuid4().hex[:12],
+        name=name,
+        created_at=datetime.datetime.now().isoformat(timespec='seconds'),
+        qr_url=request.form.get('qr_url', '').strip(),
+        qr_label=request.form.get('qr_label', '').strip(),
+        lgpd_mode=request.form.get('lgpd_mode', 'personal'),
+    )
+
+    # Upload de fundo do evento (opcional)
+    if 'fundo' in request.files and request.files['fundo'].filename:
+        f   = request.files['fundo']
+        ext = f.filename.rsplit('.', 1)[-1].lower()
+        if ext in ALLOWED_EXT:
+            tmp = os.path.join(FUNDO_CACHE_DIR, f'_ev_tmp_{ev.id}.{ext}')
+            f.save(tmp)
+            if cv2.imread(tmp) is not None:
+                dest = _event_fundo_cache_path(ev.id)
+                shutil.move(tmp, dest)
+                if CLOUDINARY_CONFIGURED:
+                    try:
+                        public_id = f'cabinefotos/events/{ev.id}/fundo'
+                        cloudinary.uploader.upload(dest, public_id=public_id,
+                                                   overwrite=True, resource_type='image')
+                        ev.background_id = public_id
+                    except Exception as e:
+                        print(f' * Event fundo upload: {e}')
+                else:
+                    ev.background_id = dest
+            elif os.path.exists(tmp):
+                os.unlink(tmp)
+
+    event_store.save(ev)
+    return redirect(f'/admin/eventos/{ev.id}')
+
+
+@app.route('/admin/eventos/<event_id>')
+@require_admin
+def admin_evento_fotos(event_id):
+    ev = event_store.load(event_id)
+    if not ev:
+        return redirect('/admin/eventos')
+
+    photos = []
     if CLOUDINARY_CONFIGURED:
         try:
-            result = cloudinary.api.resources(
-                type='upload',
-                prefix='cabinefotos/fotos/',
-                max_results=500,
-                direction='desc',
-            )
+            prefix = f'cabinefotos/events/{event_id}/fotos/'
+            result = cloudinary.api.resources(type='upload', prefix=prefix,
+                                              max_results=500, direction='desc')
             for r in result.get('resources', []):
-                url = r['secure_url']
-                # URL de thumbnail: insere transformação após /upload/
+                url   = r['secure_url']
                 thumb = url.replace('/upload/', '/upload/w_320,c_limit/', 1)
-                photos.append({'url': url, 'thumb': thumb, 'name': r['public_id'].split('/')[-1]})
+                photos.append({'url': url, 'thumb': thumb,
+                               'name': r['public_id'].split('/')[-1]})
         except Exception as e:
-            print(f" * Admin Cloudinary list error: {e}")
+            print(f" * Admin event photos: {e}")
     else:
-        for fname in sorted(os.listdir(PHOTOS_DIR), reverse=True):
-            if fname.startswith('foto_') and fname.endswith('.png'):
-                photos.append({'url': f'/static/photos/{fname}',
-                               'thumb': f'/static/photos/{fname}',
-                               'name': fname})
+        event_dir = os.path.join(PHOTOS_DIR, event_id)
+        if os.path.exists(event_dir):
+            for fname in sorted(os.listdir(event_dir), reverse=True):
+                if fname.startswith('foto_') and fname.endswith('.png'):
+                    photos.append({'url': f'/static/photos/{event_id}/{fname}',
+                                   'thumb': f'/static/photos/{event_id}/{fname}',
+                                   'name': fname})
 
     return render_template('admin_galeria.html',
+                           evento=ev,
                            photos=photos,
                            total=len(photos),
                            cloudinary_ok=CLOUDINARY_CONFIGURED)
 
 
-@app.route('/admin/zip')
+@app.route('/admin/eventos/<event_id>/arquivar', methods=['POST'])
 @require_admin
-def admin_zip():
-    """Gera ZIP com todas as fotos compostas."""
+def admin_evento_arquivar(event_id):
+    ev = event_store.load(event_id)
+    if ev:
+        ev.active = False
+        event_store.save(ev)
+    return redirect('/admin/eventos')
+
+
+@app.route('/admin/eventos/<event_id>/zip')
+@require_admin
+def admin_evento_zip(event_id):
+    ev  = event_store.load(event_id)
     buf = BytesIO()
     with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
         if CLOUDINARY_CONFIGURED:
             try:
-                result = cloudinary.api.resources(
-                    type='upload', prefix='cabinefotos/fotos/', max_results=500)
+                prefix = f'cabinefotos/events/{event_id}/fotos/'
+                result = cloudinary.api.resources(type='upload', prefix=prefix, max_results=500)
                 for r in result.get('resources', []):
                     fname    = r['public_id'].split('/')[-1] + '.png'
                     img_data = urllib.request.urlopen(r['secure_url']).read()
                     zf.writestr(fname, img_data)
             except Exception as e:
-                print(f" * Admin ZIP Cloudinary error: {e}")
+                print(f" * Event ZIP: {e}")
         else:
-            for fname in os.listdir(PHOTOS_DIR):
-                if fname.startswith('foto_') and fname.endswith('.png'):
-                    zf.write(os.path.join(PHOTOS_DIR, fname), fname)
+            event_dir = os.path.join(PHOTOS_DIR, event_id)
+            if os.path.exists(event_dir):
+                for fname in os.listdir(event_dir):
+                    if fname.endswith('.png'):
+                        zf.write(os.path.join(event_dir, fname), fname)
     buf.seek(0)
+    zip_name = f'{ev.name.replace(" ", "_")}.zip' if ev else 'fotos.zip'
     return send_file(buf, mimetype='application/zip',
-                     as_attachment=True, download_name='fotos_evento.zip')
+                     as_attachment=True, download_name=zip_name)
 
 
 if __name__ == '__main__':

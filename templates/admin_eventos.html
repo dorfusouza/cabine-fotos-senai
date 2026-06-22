@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Eventos — Admin Totem</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0d0d0d; color: #fff; font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; display: flex; flex-direction: column; }
+
+    header {
+      background: #E30613; height: 62px; padding: 0 28px;
+      display: flex; align-items: center; justify-content: space-between;
+      box-shadow: 0 2px 16px rgba(0,0,0,.5); flex-shrink: 0;
+    }
+    .brand { font-size: 1.2rem; font-weight: 800; color: #fff; letter-spacing: 2px; }
+    .sub   { font-size: .62rem; color: rgba(255,255,255,.75); letter-spacing: 3px; text-transform: uppercase; }
+    .hright { display: flex; gap: 10px; align-items: center; }
+
+    .btn { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; font-size: .85rem;
+           padding: 7px 16px; border-radius: 6px; text-decoration: none; cursor: pointer;
+           border: none; transition: opacity .2s, background .2s; }
+    .btn-ghost  { background: rgba(255,255,255,.15); color: #fff; }
+    .btn-ghost:hover { background: rgba(255,255,255,.25); }
+    .btn-white  { background: #fff; color: #E30613; }
+    .btn-white:hover { opacity: .88; }
+    .btn-red    { background: #E30613; color: #fff; }
+    .btn-red:hover { background: #b3000f; }
+    .btn-muted  { background: #1a1a1a; border: 1px solid #2a2a2a; color: #666; }
+    .btn-muted:hover { border-color: #444; color: #aaa; }
+
+    .content { flex: 1; padding: 28px; max-width: 1000px; width: 100%; margin: 0 auto; }
+
+    /* ── Criar evento ── */
+    .create-card {
+      background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 12px;
+      padding: 24px 28px; margin-bottom: 32px;
+    }
+    .create-card h2 { font-size: .95rem; font-weight: 700; color: #E30613; margin-bottom: 18px; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .form-grid .full { grid-column: 1 / -1; }
+    label { display: block; font-size: .78rem; color: #888; margin-bottom: 5px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+    input[type="text"], select {
+      width: 100%; background: #111; border: 1px solid #2a2a2a;
+      border-radius: 6px; padding: 9px 12px; color: #fff; font-size: .9rem; outline: none;
+      transition: border-color .2s;
+    }
+    input[type="text"]:focus, select:focus { border-color: #E30613; }
+    input::placeholder { color: #444; }
+    select option { background: #1a1a1a; }
+
+    .file-label {
+      display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+      background: #111; border: 1px dashed #2a2a2a; border-radius: 6px;
+      cursor: pointer; font-size: .85rem; color: #555; transition: border-color .2s;
+    }
+    .file-label:hover { border-color: #E30613; color: #aaa; }
+    input[type="file"] { display: none; }
+
+    .radio-row { display: flex; gap: 12px; }
+    .radio-opt {
+      flex: 1; display: flex; align-items: center; gap: 8px; padding: 9px 12px;
+      border: 1px solid #2a2a2a; border-radius: 6px; cursor: pointer;
+      font-size: .85rem; color: #aaa; transition: border-color .2s, background .2s;
+    }
+    .radio-opt:has(input:checked) { border-color: #E30613; background: rgba(227,6,19,.06); color: #fff; }
+    .radio-opt input { accent-color: #E30613; }
+
+    small { color: #444; font-size: .75rem; margin-top: 4px; display: block; }
+
+    /* ── Lista de eventos ── */
+    .section-title {
+      font-size: .8rem; font-weight: 700; color: #555; text-transform: uppercase;
+      letter-spacing: 1px; margin-bottom: 14px;
+    }
+
+    .evento-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+
+    .evento-card {
+      background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 10px;
+      overflow: hidden; transition: border-color .2s;
+    }
+    .evento-card:hover { border-color: #444; }
+
+    .evento-fundo {
+      width: 100%; height: 100px; object-fit: cover;
+      background: #111; display: block;
+    }
+    .evento-fundo-placeholder {
+      width: 100%; height: 100px; background: #111;
+      display: flex; align-items: center; justify-content: center; color: #2a2a2a;
+    }
+
+    .evento-body { padding: 14px 16px; }
+    .evento-name { font-weight: 700; font-size: 1rem; margin-bottom: 4px; }
+    .evento-meta { font-size: .75rem; color: #555; margin-bottom: 12px; }
+    .evento-count { font-size: .82rem; color: #888; margin-bottom: 12px; }
+    .evento-count strong { color: #fff; }
+
+    .evento-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    .badge-active   { display: inline-block; font-size: .68rem; padding: 2px 8px; border-radius: 12px; font-weight: 700; background: rgba(34,197,94,.15); border: 1px solid #22c55e; color: #22c55e; margin-left: 6px; }
+    .badge-archived { background: rgba(255,255,255,.05); border: 1px solid #2a2a2a; color: #444; }
+
+    .empty { text-align: center; padding: 60px 20px; color: #333; }
+    .empty p { margin-top: 12px; font-size: .95rem; }
+
+    footer { text-align: center; padding: 12px; color: #2a2a2a; font-size: .72rem; border-top: 1px solid #1a1a1a; flex-shrink: 0; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="brand">SENAI</div>
+    <div class="sub">Admin — Eventos</div>
+  </div>
+  <div class="hright">
+    <a href="/configuracao" class="btn btn-ghost">Configurações</a>
+    <a href="/admin/logout" class="btn btn-ghost">Sair</a>
+  </div>
+</header>
+
+<div class="content">
+
+  <!-- Criar novo evento -->
+  <div class="create-card">
+    <h2>Novo evento</h2>
+    <form method="post" action="/admin/eventos/novo" enctype="multipart/form-data">
+      <div class="form-grid">
+
+        <div class="full">
+          <label for="name">Nome do evento *</label>
+          <input type="text" id="name" name="name" placeholder="Ex: Festa Junina SENAI 2026" required>
+        </div>
+
+        <div>
+          <label for="qr_url">URL do QR sobreposto (opcional)</label>
+          <input type="text" id="qr_url" name="qr_url" placeholder="https://instagram.com/senailp">
+        </div>
+
+        <div>
+          <label for="qr_label">Texto abaixo do QR (opcional)</label>
+          <input type="text" id="qr_label" name="qr_label" placeholder="Siga-nos no Instagram!" maxlength="30">
+        </div>
+
+        <div>
+          <label>Imagem de fundo padrão (opcional)</label>
+          <label class="file-label" for="fundo-input" id="fundo-lbl">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+              <polyline points="21 15 16 10 5 21"/>
+            </svg>
+            Escolher imagem
+          </label>
+          <input type="file" id="fundo-input" name="fundo" accept=".png,.jpg,.jpeg"
+                 onchange="document.getElementById('fundo-lbl').textContent = this.files[0]?.name || 'Escolher imagem'">
+        </div>
+
+        <div>
+          <label>Modo LGPD</label>
+          <div class="radio-row">
+            <label class="radio-opt">
+              <input type="radio" name="lgpd_mode" value="personal" checked>
+              Entrega pessoal
+            </label>
+            <label class="radio-opt">
+              <input type="radio" name="lgpd_mode" value="promotional">
+              Uso promocional
+            </label>
+          </div>
+          <small>Pode ser ajustado por estação depois.</small>
+        </div>
+
+      </div>
+      <div style="margin-top:18px;">
+        <button type="submit" class="btn btn-red">Criar evento</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Lista de eventos -->
+  {% if eventos %}
+  <p class="section-title">{{ eventos|length }} evento{{ 's' if eventos|length != 1 else '' }}</p>
+  <div class="evento-grid">
+    {% for ev in eventos %}
+    <div class="evento-card">
+
+      {% set fundo_url = cloudinary_img_url(ev.background_id, width=400, crop='fill') if (ev.background_id and cloudinary_ok) else '' %}
+      {% if fundo_url %}
+      <img class="evento-fundo" src="{{ fundo_url }}" alt="{{ ev.name }}" onerror="this.style.display='none'">
+      {% else %}
+      <div class="evento-fundo-placeholder">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+          <polyline points="21 15 16 10 5 21"/>
+        </svg>
+      </div>
+      {% endif %}
+
+      <div class="evento-body">
+        <div class="evento-name">
+          {{ ev.name }}
+          <span class="badge-active {% if not ev.active %}badge-archived{% endif %}">
+            {{ 'ativo' if ev.active else 'arquivado' }}
+          </span>
+        </div>
+        <div class="evento-meta">{{ ev.created_at[:10] }}</div>
+        <div class="evento-count"><strong>{{ ev.photo_count }}</strong> foto{{ 's' if ev.photo_count != 1 else '' }}</div>
+        <div class="evento-actions">
+          <a href="/admin/eventos/{{ ev.id }}" class="btn btn-white" style="font-size:.8rem; padding:6px 12px;">Ver fotos</a>
+          {% if ev.photo_count > 0 %}
+          <a href="/admin/eventos/{{ ev.id }}/zip" class="btn btn-ghost" style="font-size:.8rem; padding:6px 12px;">ZIP</a>
+          {% endif %}
+          {% if ev.active %}
+          <form method="post" action="/admin/eventos/{{ ev.id }}/arquivar" style="margin:0;">
+            <button type="submit" class="btn btn-muted" style="font-size:.8rem; padding:6px 12px;"
+                    onclick="return confirm('Arquivar {{ ev.name }}?')">Arquivar</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% else %}
+  <div class="empty">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="1.5">
+      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+    </svg>
+    <p>Nenhum evento criado ainda. Use o formulário acima para começar.</p>
+  </div>
+  {% endif %}
+
+</div>
+
+<footer>SENAI-LP · Totem de Fotos · Área Administrativa</footer>
+
+<script>
+// Atualiza label do file input
+document.getElementById('fundo-input').addEventListener('change', function() {
+  const lbl = document.getElementById('fundo-lbl');
+  lbl.innerHTML = this.files[0] ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> ${this.files[0].name}` : 'Escolher imagem';
+});
+</script>
+
+</body>
+</html>
