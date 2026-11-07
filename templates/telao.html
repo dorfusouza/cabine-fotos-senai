@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Telão — SENAI</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; background: #000; color: #fff; overflow: hidden; cursor: none;
+                 font-family: 'Segoe UI', system-ui, sans-serif; }
+
+    .slide { position: absolute; inset: 0; opacity: 0; transition: opacity 1.2s ease; }
+    .slide.on { opacity: 1; }
+    .slide .bg { position: absolute; inset: -40px; background-size: cover; background-position: center;
+                 filter: blur(38px) brightness(.45); }
+    .slide img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
+                 filter: drop-shadow(0 10px 50px rgba(0,0,0,.7)); }
+
+    #badge { position: absolute; top: 28px; left: 32px; background: #E30613; padding: 8px 20px;
+             border-radius: 24px; font-weight: 800; letter-spacing: 2px; font-size: 1.1rem;
+             opacity: 0; transition: opacity .5s; z-index: 5; }
+    #badge.on { opacity: 1; }
+    #nome { position: absolute; bottom: 22px; left: 0; right: 0; text-align: center; z-index: 5;
+            font-size: 1.1rem; letter-spacing: 4px; text-transform: uppercase; color: rgba(255,255,255,.6);
+            text-shadow: 0 2px 10px #000; }
+
+    /* TV em retrato: a imagem 9:16 ocupa a tela toda; tira o texto de cima dela */
+    @media (orientation: portrait) {
+      #nome { display: none; }
+      #badge { top: auto; bottom: 56px; left: 50%; transform: translateX(-50%); font-size: 1.6rem; padding: 12px 32px; }
+      .slide img { filter: none; }
+    }
+
+    #vazio { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+             justify-content: center; gap: 14px; text-align: center; padding: 20px; }
+    #vazio .brand { font-size: 3rem; font-weight: 800; letter-spacing: 6px; color: #E30613; }
+    #vazio p { color: rgba(255,255,255,.5); font-size: 1.2rem; }
+    #vazio small { color: rgba(255,255,255,.25); font-size: .85rem; }
+  </style>
+</head>
+<body>
+
+<div class="slide" id="s0"><div class="bg"></div><img alt=""></div>
+<div class="slide" id="s1"><div class="bg"></div><img alt=""></div>
+<div id="badge">NOVA FOTO!</div>
+<div id="nome"></div>
+
+<div id="vazio">
+  <div class="brand">SENAI</div>
+  <p>As fotos do totem aparecem aqui</p>
+  <small id="vazio-dica"></small>
+</div>
+
+<script>
+const params   = new URLSearchParams(location.search);
+const FIXED_EVENT = params.get('event');
+let   stationId = params.get('station') || localStorage.getItem('totem_station_id') || 'default';
+
+const POLL_MS     = 6000;
+const SLIDE_MS    = 7000;
+const NEW_SLIDE_MS = 6000;
+
+let fotos = [];
+let known = new Set();
+let fila  = [];          // fotos novas, exibidas com prioridade
+let idx   = -1;
+let atual = 0;
+let timer = null;
+let first = true;
+
+function url() {
+  return FIXED_EVENT !== null
+    ? '/telao/fotos?event=' + encodeURIComponent(FIXED_EVENT)
+    : '/telao/fotos?station=' + encodeURIComponent(stationId);
+}
+
+function precarrega(src) {
+  return new Promise(res => { const i = new Image(); i.onload = () => res(true); i.onerror = () => res(false); i.src = src; });
+}
+
+async function mostrar(foto, isNova) {
+  if (!(await precarrega(foto.url))) return false;
+  const prox = document.getElementById('s' + (1 - atual));
+  prox.querySelector('img').src = foto.url;
+  prox.querySelector('.bg').style.backgroundImage = `url("${foto.url}")`;
+  prox.classList.add('on');
+  document.getElementById('s' + atual).classList.remove('on');
+  atual = 1 - atual;
+  document.getElementById('badge').classList.toggle('on', !!isNova);
+  document.getElementById('vazio').style.display = 'none';
+  return true;
+}
+
+async function proximo() {
+  clearTimeout(timer);
+  if (!fotos.length) { timer = setTimeout(proximo, 2000); return; }
+  let foto, isNova = false;
+  if (fila.length) { foto = fila.shift(); isNova = true; }
+  else { idx = (idx + 1) % fotos.length; foto = fotos[idx]; }
+  const ok = await mostrar(foto, isNova);
+  timer = setTimeout(proximo, ok ? (isNova ? NEW_SLIDE_MS : SLIDE_MS) : 500);
+}
+
+async function poll() {
+  try {
+    const d = await fetch(url()).then(r => r.json());
+    document.getElementById('nome').textContent = d.nome || '';
+    const novas = d.fotos.filter(f => !known.has(f.id));
+    novas.forEach(f => known.add(f.id));
+    const eraVazio = fotos.length === 0;
+    fotos = d.fotos;
+    if (first) {
+      idx = fotos.length - 1;   // começa pela mais recente
+      first = false;
+      if (fotos.length) { clearTimeout(timer); proximo(); }
+      else document.getElementById('vazio-dica').textContent =
+        FIXED_EVENT === null ? 'Vinculado ao evento da estação deste navegador' : '';
+    } else if (novas.length) {
+      fila.push(...novas);
+      if (eraVazio) { clearTimeout(timer); proximo(); }
+    }
+  } catch (e) { /* mantém o que está na tela */ }
+}
+
+document.addEventListener('click', () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen().catch(() => {});
+});
+document.addEventListener('keydown', e => { if (e.key === 'f' || e.key === 'F') document.documentElement.requestFullscreen().catch(() => {}); });
+
+poll();
+setInterval(poll, POLL_MS);
+</script>
+</body>
+</html>

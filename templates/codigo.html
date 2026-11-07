@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Buscar minha foto — SENAI</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0d0d0d; color: #fff; font-family: 'Segoe UI', system-ui, sans-serif;
+           min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
+    header { width: 100%; background: #E30613; padding: 16px 24px; }
+    .brand { font-size: 1.3rem; font-weight: 800; letter-spacing: 2px; }
+    .sub   { font-size: .62rem; color: rgba(255,255,255,.75); letter-spacing: 3px; text-transform: uppercase; }
+    .container { width: 100%; max-width: 420px; padding: 40px 20px; display: flex; flex-direction: column; gap: 18px; text-align: center; }
+    h1 { font-size: 1.3rem; }
+    p  { color: rgba(255,255,255,.55); font-size: .92rem; }
+    input { width: 100%; background: #111; border: 2px solid #2a2a2a; border-radius: 10px; color: #fff;
+            font: 800 2rem 'Consolas', monospace; letter-spacing: .3em; text-align: center; text-transform: uppercase;
+            padding: 14px 8px 14px calc(8px + .3em); outline: none; }
+    input:focus { border-color: #E30613; }
+    button { background: #E30613; color: #fff; border: none; border-radius: 8px; font-weight: 700;
+             font-size: 1rem; padding: 14px; cursor: pointer; }
+    button:hover { background: #b3000f; }
+    .erro { background: rgba(227,6,19,.12); border: 1px solid #E30613; color: #ff8a8a;
+            border-radius: 8px; padding: 10px 14px; font-size: .9rem; }
+    footer { margin-top: auto; padding: 16px; color: #333; font-size: .72rem; }
+  </style>
+</head>
+<body>
+<header>
+  <div class="brand">SENAI</div>
+  <div class="sub">Totem de Fotos</div>
+</header>
+
+<form class="container" method="post" action="/f">
+  <h1>Encontre sua foto</h1>
+  <p>Digite o código de 6 letras e números que apareceu no totem.</p>
+  {% if erro %}<div class="erro">{{ erro }}</div>{% endif %}
+  <input name="codigo" maxlength="8" autocomplete="off" autocapitalize="characters"
+         autocorrect="off" spellcheck="false" placeholder="••••••" autofocus required>
+  <button type="submit">Ver minha foto</button>
+</form>
+
+<footer>SENAI-LP &nbsp;·&nbsp; Totem de Fotos</footer>
+</body>
+</html>

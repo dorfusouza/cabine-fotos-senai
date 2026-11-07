@@ -155,6 +155,7 @@
           </label>
           <input type="file" id="fundo-input" name="fundo" accept=".png,.jpg,.jpeg"
                  onchange="document.getElementById('fundo-lbl').textContent = this.files[0]?.name || 'Escolher imagem'">
+          <small>Foto única: 1080×1350 (4:5, feed) ou 1080×1920 (9:16, Stories). Filipeta: use 1080×1920.</small>
         </div>
 
         <div>
@@ -170,6 +171,21 @@
             </label>
           </div>
           <small>Pode ser ajustado por estação depois.</small>
+        </div>
+
+        <div class="full">
+          <label>Modo de captura</label>
+          <div class="radio-row">
+            <label class="radio-opt">
+              <input type="radio" name="capture_mode" value="strip" checked>
+              Filipeta (3 fotos)
+            </label>
+            <label class="radio-opt">
+              <input type="radio" name="capture_mode" value="single">
+              Foto única
+            </label>
+          </div>
+          <small>Foto única tira 1 foto grande, recortada ao centro. Dá para trocar depois no card do evento.</small>
         </div>
 
       </div>
@@ -207,8 +223,15 @@
         </div>
         <div class="evento-meta">{{ ev.created_at[:10] }}</div>
         <div class="evento-count"><strong>{{ ev.photo_count }}</strong> foto{{ 's' if ev.photo_count != 1 else '' }}</div>
+        <form method="post" action="/admin/eventos/{{ ev.id }}/modo" style="margin:0 0 12px;">
+          <select name="capture_mode" onchange="this.form.submit()" style="font-size:.8rem; padding:6px 10px;" title="Modo de captura">
+            <option value="strip"  {{ 'selected' if ev.capture_mode != 'single' }}>Modo: filipeta (3 fotos)</option>
+            <option value="single" {{ 'selected' if ev.capture_mode == 'single' }}>Modo: foto única</option>
+          </select>
+        </form>
         <div class="evento-actions">
           <a href="/admin/eventos/{{ ev.id }}" class="btn btn-white" style="font-size:.8rem; padding:6px 12px;">Ver fotos</a>
+          <a href="/telao?event={{ ev.id }}" target="_blank" class="btn btn-ghost" style="font-size:.8rem; padding:6px 12px;">Telão</a>
           {% if ev.photo_count > 0 %}
           <a href="/admin/eventos/{{ ev.id }}/zip" class="btn btn-ghost" style="font-size:.8rem; padding:6px 12px;">ZIP</a>
           {% endif %}

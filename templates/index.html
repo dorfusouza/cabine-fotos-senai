@@ -5,10 +5,10 @@
 <div class="page-content">
 
   <h1 class="page-title" id="event-title">Leve uma recordação desse momento</h1>
-  <p class="page-subtitle">Levante a palma da mão para iniciar — 3 fotos serão capturadas automaticamente</p>
+  <p class="page-subtitle" id="page-subtitle">Levante a palma da mão para iniciar — 3 fotos serão capturadas automaticamente</p>
 
   <!-- Indicadores de passo -->
-  <div class="steps">
+  <div class="steps" id="steps">
     <div class="step-dot" id="step-1">1</div>
     <div class="step-line" id="line-1"></div>
     <div class="step-dot" id="step-2">2</div>
@@ -35,22 +35,25 @@
 
 <!-- ── Modal: resultado ──────────────────────────────────── -->
 <div class="modal fade" id="photoModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
-  <div class="modal-dialog modal-dialog-centered">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
     <div class="modal-content">
 
       <div class="modal-header">
         <div>
           <h4>Sua foto está pronta!</h4>
-          <p>Escaneie o QR Code para baixar. Clique em Fechar para nova captura.</p>
+          <p>Anote o código abaixo (ou escaneie o QR Code) para baixar sua foto depois. Clique em Fechar para nova captura.</p>
         </div>
       </div>
 
       <div class="modal-body">
         <div class="row g-0 align-items-center">
           <div class="col-md-4 qr-section text-center">
-            <p class="qr-label">QR Code para download</p>
+            <p class="qr-label">Seu código</p>
+            <div id="photo_code" class="photo-code"></div>
+            <p class="code-hint">Digite em<br><strong id="code_url"></strong></p>
+            <p class="qr-label" style="margin-top:14px;">ou escaneie</p>
             <img id="qr_image" src="" alt="QR Code"
-                 style="max-width:180px; width:100%; border-radius:8px;">
+                 style="max-width:130px; width:100%; border-radius:8px;">
           </div>
           <div class="col-md-8 photo-section text-center">
             <img id="saved_image" src="" alt="Foto capturada"
@@ -73,6 +76,12 @@
 {% endblock %}
 
 {% block scripts %}
+<style>
+  .photo-code { font: 800 2.3rem 'Consolas', 'Courier New', monospace; letter-spacing: .12em;
+                color: #E30613; background: #fff; border-radius: 8px; padding: 8px 4px 8px calc(4px + .12em); }
+  .code-hint  { font-size: .8rem; color: #888; margin: 6px 0 0; }
+  .code-hint strong { color: #ccc; }
+</style>
 <!-- MediaPipe Hands via CDN (requer internet) -->
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3/drawing_utils.js" crossorigin="anonymous"></script>
@@ -84,7 +93,8 @@ const canvasEl = document.getElementById('output_canvas');
 const ctx      = canvasEl.getContext('2d');
 const statusEl = document.getElementById('status_text');
 
-const TOTAL   = 3;
+let TOTAL     = 3;      // 3 = filipeta, 1 = foto única (definido pelo evento)
+let cropAspect = null;  // proporção do recorte no modo foto única
 const TIMER   = 5;
 
 // Station ID — identifica o totem/estação (persiste em localStorage)
@@ -165,6 +175,12 @@ fetch('/station_info?station=' + STATION_ID)
       document.title = cfg.event_name + ' — SENAI';
     }
     window._stationCfg = cfg;
+    TOTAL      = cfg.photos_total || 3;
+    cropAspect = cfg.crop_aspect  || null;
+    document.getElementById('steps').style.display = TOTAL > 1 ? '' : 'none';
+    document.getElementById('page-subtitle').textContent = TOTAL > 1
+      ? `Levante a palma da mão para iniciar — ${TOTAL} fotos serão capturadas automaticamente`
+      : 'Levante a palma da mão por 3 segundos para tirar sua foto';
   }).catch(() => {});
 
 camera.start().then(() => {
@@ -185,7 +201,7 @@ function iniciarContagem() {
   cancelarIdleReset();
   emContagem     = true;
   countdownStart = Date.now();
-  setStatus(`Foto ${fotoSeq + 1} de ${TOTAL} — preparando...`, 'capturing');
+  setStatus(TOTAL > 1 ? `Foto ${fotoSeq + 1} de ${TOTAL} — preparando...` : 'Prepare-se para a foto...', 'capturing');
   atualizarSteps();
 }
 
@@ -206,7 +222,7 @@ async function capturarFoto() {
   emContagem = false;
   triggerFlash();
 
-  setStatus(`Capturando foto ${fotoSeq + 1} de ${TOTAL}...`, 'capturing');
+  setStatus(TOTAL > 1 ? `Capturando foto ${fotoSeq + 1} de ${TOTAL}...` : 'Capturando...', 'capturing');
 
   // Captura o frame cru do vídeo (sem espelhamento — foto natural)
   const tmp = document.createElement('canvas');
@@ -231,7 +247,8 @@ async function capturarFoto() {
       capturando = false;
       setTimeout(iniciarContagem, 1000);
     } else {
-      setStatus('Todas as fotos capturadas! Gerando QR Code...', 'ready');
+      setStatus(TOTAL > 1 ? 'Todas as fotos capturadas! Gerando seu código...'
+                          : 'Foto capturada! Gerando seu código...', 'ready');
       fotoSeq  = 0;
       emEspera = true;
       capturando = false;
@@ -288,6 +305,23 @@ function onResults(results) {
   }
 
   ctx.restore(); // remove espelhamento para os overlays de texto
+
+  // Guia de enquadramento (modo foto única): escurece o que será cortado
+  if (cropAspect) {
+    const cw = canvasEl.height * cropAspect;
+    if (cw < canvasEl.width) {
+      const x0 = (canvasEl.width - cw) / 2;
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(0, 0, x0, canvasEl.height);
+      ctx.fillRect(x0 + cw, 0, x0, canvasEl.height);
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+      ctx.lineWidth   = 3;
+      ctx.setLineDash([14, 10]);
+      ctx.strokeRect(x0, 0, cw, canvasEl.height);
+      ctx.restore();
+    }
+  }
 
   // Overlay: arco de progresso do hold (3s antes de iniciar contagem)
   if (handHoldStart !== null && !emContagem && !emEspera && !capturando) {
@@ -349,7 +383,7 @@ function onResults(results) {
   }
 
   // Overlay: barra de progresso de fotos (canto superior esquerdo)
-  if (emContagem || fotoSeq > 0 || emEspera) {
+  if (TOTAL > 1 && (emContagem || fotoSeq > 0 || emEspera)) {
     const atual  = emEspera ? TOTAL : fotoSeq + (emContagem ? 1 : 0);
     const label  = `Foto ${atual} / ${TOTAL}`;
     ctx.save();
@@ -369,7 +403,7 @@ function onResults(results) {
 }
 
 // ── Inatividade ──────────────────────────────────────────
-const MODAL_AUTO_CLOSE_S = 30;
+const MODAL_AUTO_CLOSE_S = 45;
 const IDLE_RESET_S       = 45;
 
 let modalCountdownTimer = null;
@@ -433,11 +467,13 @@ function resetarEstado() {
 // ── Modal ────────────────────────────────────────────────
 let modalInstance = null;
 
-function openModal() {
+function openModal(codigo) {
   fetch('/captured_image' + qs())
     .then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); })
     .then(blob => {
       document.getElementById('saved_image').src = URL.createObjectURL(blob);
+      document.getElementById('photo_code').textContent = codigo || '—';
+      document.getElementById('code_url').textContent   = location.host + '/f';
       document.getElementById('qr_image').src    = '/qr' + qs() + '&t=' + Date.now();
       const el = document.getElementById('photoModal');
       modalInstance = new bootstrap.Modal(el);
@@ -465,7 +501,7 @@ function fecharModal() {
 setInterval(() => {
   fetch('/captured' + qs())
     .then(r => r.json())
-    .then(d => { if (d.foto_capturada) openModal(); })
+    .then(d => { if (d.foto_capturada) openModal(d.codigo); })
     .catch(() => {});
 }, 3000);
 </script>

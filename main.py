@@ -3,6 +3,8 @@ import uuid
 import json
 import base64
 import shutil
+import time
+import secrets
 import threading
 import zipfile
 import functools
@@ -19,6 +21,7 @@ import cloudinary.api
 import cloudinary.uploader
 from flask import Flask, render_template, send_file, Response, request, jsonify, redirect, session
 from io import BytesIO
+from PIL import Image
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
@@ -71,6 +74,7 @@ class Event:
     lgpd_mode:    str = 'personal'
     active:       bool = True
     photo_count:  int  = 0
+    capture_mode: str = 'strip'   # 'strip' (filipeta, 3 fotos) | 'single' (1 foto)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -194,6 +198,10 @@ _REF_X,      _REF_Y_BASE =   74,  220
 _REF_FOTO_W, _REF_FOTO_H =  900,  550
 _REF_BORDA               =   10
 
+# Modo "single": 1 foto grande, recortada ao centro (proporção 900×1100)
+_SINGLE_FOTO_H, _SINGLE_Y = 1100, 490
+_CAPTURE_MODES = {'strip': 3, 'single': 1}   # modo → nº de fotos
+
 # ── Config por estação (nome do evento, QR overlay URL, modo LGPD) ───────────
 _station_config: dict[str, dict] = {}
 _cfg_lock = threading.Lock()
@@ -205,6 +213,15 @@ _STATION_DEFAULTS = {
     'overlay_qr_label': '',
     'lgpd_mode':       'personal',
 }
+
+
+def get_capture_mode(event_id: str) -> str:
+    """Modo de captura vem do evento vinculado; sem evento usa a filipeta."""
+    if event_id:
+        ev = event_store.load(event_id)
+        if ev and ev.capture_mode in _CAPTURE_MODES:
+            return ev.capture_mode
+    return 'strip'
 
 def get_station_config(station_id: str) -> dict:
     with _cfg_lock:
@@ -256,6 +273,28 @@ def get_station_fundo(station_id: str) -> str:
     return FUNDO_DEFAULT
 
 
+def get_bg_size(path: str) -> tuple[int, int]:
+    """(largura, altura) do fundo, lendo só o cabeçalho da imagem."""
+    for p in (path, FUNDO_DEFAULT):
+        try:
+            with Image.open(p) as im:
+                return im.size
+        except Exception:
+            continue
+    return _REF_W, _REF_H
+
+
+def single_slot(bg_w: int, bg_h: int) -> tuple[int, int, int, int]:
+    """Área (x, y, w, h) da foto única, conforme o formato do fundo."""
+    if bg_h / bg_w >= 1.6:   # 9:16 (Stories): posição calibrada para mundosenai.png
+        sx, sy = bg_w / _REF_W, bg_h / _REF_H
+        return int(_REF_X * sx), int(_SINGLE_Y * sy), int(_REF_FOTO_W * sx), int(_SINGLE_FOTO_H * sy)
+    # 4:5 (feed) ou outro formato mais largo: margens proporcionais, com espaço p/ topo e QR
+    x = int(bg_w * 0.055)
+    y = int(bg_h * 0.11)
+    return x, y, bg_w - 2 * x, int(bg_h * 0.76)
+
+
 # ── Estado por sessão ─────────────────────────────────────────────────────────
 _sessions: dict = {}
 _sessions_lock  = threading.Lock()
@@ -271,6 +310,7 @@ def get_session(sid: str) -> dict:
                 'cloudinary_url': None,
                 'foto_capturada': False,
                 'espera':         False,
+                'codigo':         None,
             }
         return _sessions[sid]
 
@@ -315,7 +355,8 @@ def get_foto_cloudinary_url(photo_id: str) -> str | None:
 
 # ── Cloudinary upload de fotos ────────────────────────────────────────────────
 def upload_foto_cloudinary(filepath: str, photo_id: str,
-                           event_id: str = '', event_name: str = '') -> str | None:
+                           event_id: str = '', event_name: str = '',
+                           codigo: str = '') -> str | None:
     if not CLOUDINARY_CONFIGURED:
         return None
     public_id = (f'cabinefotos/events/{event_id}/fotos/{photo_id}'
@@ -327,11 +368,155 @@ def upload_foto_cloudinary(filepath: str, photo_id: str,
             overwrite=False,
             resource_type='image',
             context=f'event_name={event_name}',
+            tags=[f'code_{codigo}'] if codigo else None,
         )
         return result['secure_url']
     except Exception as e:
         print(f" * Cloudinary foto upload error: {e}")
         return None
+
+
+# ── Código curto por foto (entrega sem celular) ───────────────────────────────
+# Sem 0/O/1/I/L para não confundir ao anotar à mão.
+_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+_CODE_LEN      = 6
+CODES_PATH     = os.path.join(app.root_path, 'data', 'codes.json')
+_codes: dict[str, dict] = {}        # código → {photo_id, event_id}
+_codes_lock    = threading.Lock()
+_code_attempts: dict[str, list[float]] = {}   # ip → timestamps de erros
+
+try:
+    with open(CODES_PATH, encoding='utf-8') as _f:
+        _codes.update(json.load(_f))
+except (OSError, ValueError):
+    pass
+
+
+def _save_codes_locked():
+    try:
+        tmp = CODES_PATH + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(_codes, f)
+        os.replace(tmp, CODES_PATH)
+    except OSError as e:
+        print(f' * codes.json: {e}')
+
+
+def gerar_codigo(photo_id: str, event_id: str) -> str:
+    with _codes_lock:
+        while True:
+            codigo = ''.join(secrets.choice(_CODE_ALPHABET) for _ in range(_CODE_LEN))
+            if codigo not in _codes:
+                break
+        _codes[codigo] = {'photo_id': photo_id, 'event_id': event_id}
+        _save_codes_locked()
+    return codigo
+
+
+def _event_name_of(event_id: str) -> str:
+    ev = event_store.load(event_id) if event_id else None
+    return ev.name if ev else 'SENAI — Totem de Fotos'
+
+
+def resolver_codigo(codigo: str) -> str | None:
+    """Devolve o photo_id do código (e garante o registro em memória), ou None."""
+    codigo = ''.join(c for c in codigo.upper() if c.isalnum())
+    if len(codigo) != _CODE_LEN:
+        return None
+
+    with _codes_lock:
+        entry = _codes.get(codigo)
+
+    cloud_url = None
+    if not entry and CLOUDINARY_CONFIGURED:
+        # Fallback após restart (codes.json perdido): a tag no Cloudinary guarda o código
+        try:
+            res = cloudinary.api.resources_by_tag(f'code_{codigo}', max_results=1)
+            r = (res.get('resources') or [None])[0]
+            if r:
+                parts     = r['public_id'].split('/')
+                cloud_url = r['secure_url']
+                entry = {'photo_id': parts[-1],
+                         'event_id': parts[2] if len(parts) >= 5 and parts[1] == 'events' else ''}
+                with _codes_lock:
+                    _codes[codigo] = entry
+                    _save_codes_locked()
+        except Exception as e:
+            print(f' * resolver_codigo: {e}')
+
+    if not entry:
+        return None
+    if not get_foto_info(entry['photo_id']):
+        registrar_foto(entry['photo_id'], cloud_url, '', entry['event_id'],
+                       _event_name_of(entry['event_id']))
+    return entry['photo_id']
+
+
+def _client_ip() -> str:
+    fwd = request.headers.get('X-Forwarded-For', '')
+    return (fwd.split(',')[0].strip() if fwd else request.remote_addr) or '?'
+
+
+def _code_rate_limited(ip: str) -> bool:
+    now = time.time()
+    with _codes_lock:
+        hist = [t for t in _code_attempts.get(ip, []) if now - t < 600]
+        _code_attempts[ip] = hist
+        return len(hist) >= 10
+
+
+def _code_register_fail(ip: str):
+    with _codes_lock:
+        _code_attempts.setdefault(ip, []).append(time.time())
+
+
+# ── Telão (slideshow das fotos do evento) ─────────────────────────────────────
+_TELAO_MAX    = 80
+_telao_fotos: dict[str, list[dict]] = {}   # event_id → fotos em ordem cronológica
+_telao_seeded: set[str] = set()
+_telao_lock   = threading.Lock()
+
+
+def _telao_add(event_id: str, photo_id: str, url: str):
+    with _telao_lock:
+        lst = _telao_fotos.setdefault(event_id, [])
+        if any(p['id'] == photo_id for p in lst):
+            return
+        lst.append({'id': photo_id, 'url': url})
+        del lst[:-_TELAO_MAX]
+
+
+def _telao_cloud_url(url: str) -> str:
+    return url.replace('/upload/', '/upload/c_limit,w_1400,q_auto/', 1)
+
+
+def _telao_seed(event_id: str):
+    """Carrega as últimas fotos do evento uma vez por processo (após restart)."""
+    with _telao_lock:
+        if event_id in _telao_seeded:
+            return
+        _telao_seeded.add(event_id)
+    found: list[tuple[str, str]] = []
+    if CLOUDINARY_CONFIGURED:
+        prefix = f'cabinefotos/events/{event_id}/fotos/' if event_id else 'cabinefotos/fotos/'
+        try:
+            res = cloudinary.api.resources(type='upload', prefix=prefix,
+                                           max_results=_TELAO_MAX, direction='desc')
+            for r in reversed(res.get('resources', [])):
+                found.append((r['public_id'].split('/')[-1], _telao_cloud_url(r['secure_url'])))
+        except Exception as e:
+            print(f' * telao seed: {e}')
+    else:
+        base = os.path.join(PHOTOS_DIR, event_id) if event_id else PHOTOS_DIR
+        if os.path.isdir(base):
+            fnames = sorted((f for f in os.listdir(base)
+                             if f.startswith('foto_') and f.endswith('.png')),
+                            key=lambda f: os.path.getmtime(os.path.join(base, f)))
+            sub = f'{event_id}/' if event_id else ''
+            for f in fnames[-_TELAO_MAX:]:
+                found.append((f[:-4], f'/static/photos/{sub}{f}'))
+    for pid, url in found:
+        _telao_add(event_id, pid, url)
 
 
 # ── QR overlay na imagem composta ─────────────────────────────────────────────
@@ -435,7 +620,14 @@ def configuracao():
 @app.route('/station_info')
 def station_info():
     station_id = request.args.get('station', 'default')
-    return jsonify(get_station_config(station_id))
+    cfg  = get_station_config(station_id)
+    modo = get_capture_mode(cfg.get('event_id', ''))
+    crop_aspect = None
+    if modo == 'single':
+        _, _, sw, sh = single_slot(*get_bg_size(get_station_fundo(station_id)))
+        crop_aspect = sw / sh
+    cfg.update(capture_mode=modo, photos_total=_CAPTURE_MODES[modo], crop_aspect=crop_aspect)
+    return jsonify(cfg)
 
 
 @app.route('/config_estacao', methods=['POST'])
@@ -474,15 +666,37 @@ def upload_foto():
     if frame is None:
         return jsonify(success=False, error='Invalid image'), 400
 
-    # Salva cada foto no tamanho de referência; o composite redimensiona para o fundo atual
-    frame    = cv2.resize(frame, (_REF_FOTO_W, _REF_FOTO_H))
+    cfg      = get_station_config(station_id)
+    modo     = get_capture_mode(cfg.get('event_id', ''))
+    total    = _CAPTURE_MODES[modo]
+    single   = (modo == 'single')
+
+    if single:
+        # Recorta o centro do frame na proporção do slot do fundo e descarta sequência antiga
+        sess['foto_seq'] = 0
+        _, _, slot_w, slot_h = single_slot(*get_bg_size(get_station_fundo(station_id)))
+        fh, fw = frame.shape[:2]
+        alvo   = slot_w / slot_h
+        if fw / fh > alvo:
+            novo_w = int(fh * alvo)
+            x0     = (fw - novo_w) // 2
+            frame  = frame[:, x0 : x0 + novo_w]
+        else:
+            novo_h = int(fw / alvo)
+            y0     = (fh - novo_h) // 2
+            frame  = frame[y0 : y0 + novo_h, :]
+    else:
+        slot_w, slot_h = _REF_FOTO_W, _REF_FOTO_H
+
+    # Salva cada foto no tamanho do slot; o composite redimensiona para o fundo atual
+    frame    = cv2.resize(frame, (slot_w, slot_h))
     sid_pfx  = sid[:8]
     seq_name = f'{sid_pfx}_foto_{sess["foto_seq"]}.png'
     cv2.imwrite(os.path.join(PHOTOS_DIR, seq_name), frame)
     sess['nome_foto'] = seq_name
     sess['foto_seq'] += 1
 
-    if sess['foto_seq'] == 3:
+    if sess['foto_seq'] >= total:
         fundo_path = get_station_fundo(station_id)
         moldura    = cv2.imread(fundo_path)
         if moldura is None:
@@ -494,18 +708,21 @@ def upload_foto():
         bg_h, bg_w = moldura.shape[:2]
         sx = bg_w / _REF_W
         sy = bg_h / _REF_H
-        x      = int(_REF_X      * sx)
-        y_base = int(_REF_Y_BASE * sy)
-        w      = int(_REF_FOTO_W * sx)
-        h      = int(_REF_FOTO_H * sy)
-        borda  = max(4, int(_REF_BORDA * sy))
+        if single:
+            x, y_base, w, h = single_slot(bg_w, bg_h)
+        else:
+            x      = int(_REF_X      * sx)
+            y_base = int(_REF_Y_BASE * sy)
+            w      = int(_REF_FOTO_W * sx)
+            h      = int(_REF_FOTO_H * sy)
+        borda  = max(4, int(_REF_BORDA * sy)) // 2 * 2   # par, para o recorte da moldura encaixar
 
         nome_comp = f'foto_{station_id[:8]}_{uuid.uuid4()}.png'
         photo_id  = nome_comp[:-4]
         bg_foto   = np.zeros((h + borda, w + borda, 3), dtype=np.uint8)
 
         y = y_base
-        for seq in range(3):
+        for seq in range(total):
             foto = cv2.imread(os.path.join(PHOTOS_DIR, f'{sid_pfx}_foto_{seq}.png'))
             if foto is None:
                 continue
@@ -516,7 +733,6 @@ def upload_foto():
             y += h + max(10, int(15 * sy))
 
         # QR overlay no canto inferior direito
-        cfg           = get_station_config(station_id)
         event_id      = cfg.get('event_id', '')
         overlay_url   = cfg.get('overlay_qr_url', '')
         overlay_label = cfg.get('overlay_qr_label', '')
@@ -536,9 +752,13 @@ def upload_foto():
 
         event_name = cfg.get('event_name', 'SENAI — Totem de Fotos')
         cloud_url  = None
+        codigo     = gerar_codigo(photo_id, event_id)
         try:
-            cloud_url = upload_foto_cloudinary(comp_path, photo_id, event_id, event_name)
+            cloud_url = upload_foto_cloudinary(comp_path, photo_id, event_id, event_name, codigo)
             registrar_foto(photo_id, cloud_url, station_id, event_id, event_name)
+            _telao_add(event_id, photo_id,
+                       _telao_cloud_url(cloud_url) if cloud_url
+                       else '/static/photos/' + nome_local.replace(os.sep, '/'))
             if event_id:
                 threading.Thread(
                     target=event_store.increment_photos,
@@ -551,6 +771,7 @@ def upload_foto():
         sess['nome_foto']      = nome_local
         sess['photo_id']       = photo_id
         sess['cloudinary_url'] = cloud_url
+        sess['codigo']         = codigo
         sess['foto_capturada'] = True
         sess['foto_seq']       = 0
         sess['espera']         = True
@@ -574,7 +795,45 @@ def captured():
     sess = get_session(sid)
     fotocap               = sess['foto_capturada']
     sess['foto_capturada'] = False
-    return jsonify(foto_capturada=fotocap)
+    return jsonify(foto_capturada=fotocap, codigo=sess.get('codigo') if fotocap else None)
+
+
+@app.route('/f', methods=['GET', 'POST'])
+@app.route('/f/<codigo>')
+def buscar_codigo(codigo=None):
+    erro = None
+    if request.method == 'POST':
+        codigo = request.form.get('codigo', '')
+    if codigo is not None:
+        ip = _client_ip()
+        if _code_rate_limited(ip):
+            erro = 'Muitas tentativas. Aguarde alguns minutos e tente de novo.'
+        else:
+            photo_id = resolver_codigo(codigo)
+            if photo_id:
+                return redirect(f'/foto/{photo_id}')
+            _code_register_fail(ip)
+            erro = 'Código não encontrado. Confira as letras e números.'
+    return render_template('codigo.html', erro=erro)
+
+
+@app.route('/telao')
+def telao():
+    return render_template('telao.html')
+
+
+@app.route('/telao/fotos')
+def telao_fotos():
+    event_id = request.args.get('event')
+    if event_id is None:
+        event_id = get_station_config(request.args.get('station', 'default')).get('event_id', '')
+    event_id = event_id.strip()
+    _telao_seed(event_id)
+    with _telao_lock:
+        fotos = list(_telao_fotos.get(event_id, []))
+    return jsonify(event_id=event_id,
+                   nome=_event_name_of(event_id) if event_id else '',
+                   fotos=fotos)
 
 
 @app.route('/qr')
@@ -695,6 +954,8 @@ def admin_evento_novo():
         qr_url=request.form.get('qr_url', '').strip(),
         qr_label=request.form.get('qr_label', '').strip(),
         lgpd_mode=request.form.get('lgpd_mode', 'personal'),
+        capture_mode=(request.form.get('capture_mode')
+                      if request.form.get('capture_mode') in _CAPTURE_MODES else 'strip'),
     )
 
     # Upload de fundo do evento (opcional)
@@ -762,6 +1023,17 @@ def admin_evento_fotos(event_id):
                            photos=photos,
                            total=len(photos),
                            cloudinary_ok=CLOUDINARY_CONFIGURED)
+
+
+@app.route('/admin/eventos/<event_id>/modo', methods=['POST'])
+@require_admin
+def admin_evento_modo(event_id):
+    ev   = event_store.load(event_id)
+    modo = request.form.get('capture_mode', '')
+    if ev and modo in _CAPTURE_MODES:
+        ev.capture_mode = modo
+        event_store.save(ev)
+    return redirect('/admin/eventos')
 
 
 @app.route('/admin/eventos/<event_id>/arquivar', methods=['POST'])
