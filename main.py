@@ -29,6 +29,7 @@ app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24))
 # ── Paths ─────────────────────────────────────────────────────────────────────
 PHOTOS_DIR      = os.path.join(app.root_path, 'static', 'photos')
 FUNDO_DEFAULT   = os.path.join(app.root_path, 'static', 'images', 'mundosenai.png')
+FUNDO_DEFAULT_SINGLE = os.path.join(app.root_path, 'static', 'images', 'exposenai.png')
 FUNDO_CACHE_DIR = os.path.join(app.root_path, 'static', 'fundos')
 DATA_DIR        = os.path.join(app.root_path, 'data', 'events')
 ALLOWED_EXT     = {'png', 'jpg', 'jpeg'}
@@ -270,7 +271,8 @@ def get_station_fundo(station_id: str) -> str:
                 except Exception:
                     pass
 
-    return FUNDO_DEFAULT
+    # Sem fundo próprio: foto única usa o padrão Expo SENAI; filipeta usa o 9:16
+    return FUNDO_DEFAULT_SINGLE if get_capture_mode(event_id) == 'single' else FUNDO_DEFAULT
 
 
 def get_bg_size(path: str) -> tuple[int, int]:
